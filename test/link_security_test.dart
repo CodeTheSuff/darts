@@ -75,12 +75,17 @@ void main() {
     expect(host.peerCount, 1);
     expect(Store.isTrustedGuest(Store.deviceId), isTrue);
     await guest.stop();
-    // zweiter Beitritt ohne Nachfrage
+    // Schlüssel wurde ausgetauscht und gemerkt
+    final known = Store.knownHosts.single;
+    expect(known.key, isNotNull);
+    expect(known.key!.length, 64);
+    // zweiter Beitritt per Schlüssel: ohne Code und ohne Nachfrage
     final again = Link.forTest();
     var s2 = 0;
     again.onState = (_) => s2++;
-    expect(await again.join('127.0.0.1', host.port, host.code!), isTrue);
+    expect(await again.join('127.0.0.1', host.port, '', hostDevice: known.device), isTrue);
     await _wait(() => s2 > 0);
+    expect(s2, greaterThan(0));
     expect(asked, 1);
     await again.stop();
     await host.stop();
@@ -129,6 +134,66 @@ void main() {
     expect(got.last['tsame'], isTrue);
     expect((got.last['tournament'] as Map)['name'], 'Liga');
     await guest.stop();
+    await host.stop();
+  });
+
+  test('Falscher Host (anderer Schlüssel) wird erkannt, der Gast trennt sofort', () async {
+    final host = await _strictHost(ask: (_, _) async => true);
+    final guest = Link.forTest();
+    var states = 0;
+    guest.onState = (_) => states++;
+    expect(await guest.join('127.0.0.1', host.port, host.code!), isTrue);
+    await _wait(() => states > 0);
+    await guest.stop();
+    // Host kennt einen anderen Schlüssel → kann sich nicht ausweisen
+    final dev = Store.knownHosts.single.device;
+    Store.trustGuest(dev, 'Gerät', List.filled(64, 'f').join());
+    final g2 = Link.forTest();
+    var s2 = 0;
+    g2.onState = (_) => s2++;
+    await g2.join('127.0.0.1', host.port, '', hostDevice: dev);
+    await _wait(() => g2.denied);
+    expect(g2.denied, isTrue);
+    expect(g2.status, contains('ausweisen'));
+    expect(s2, 0);
+    await g2.stop();
+    await host.stop();
+  });
+
+  test('Schlüssel-Anmeldung ohne bekannten Schlüssel wird abgelehnt', () async {
+    final host = await _strictHost(ask: (_, _) async => true);
+    final ws = await WebSocket.connect('ws://127.0.0.1:${host.port}/darts?auth=1');
+    final got = <String>[];
+    ws.listen((m) => got.add('$m'));
+    ws.add(jsonEncode({'t': 'hello', 'device': 'x', 'name': 'X', 'auth': true, 'nonce': List.filled(32, 'a').join()}));
+    await _wait(() => got.isNotEmpty);
+    expect(got.first, contains('denied'));
+    await ws.close();
+    await host.stop();
+  });
+
+  test('Anzeige-Gerät darf nichts eintragen', () async {
+    final host = Link.forTest();
+    host.hostState = () => {'match': null, 'tournament': null};
+    final received = <String>[];
+    host.onHostMessage = (m) => received.add('${m['t']}');
+    await host.startHost(preferredPort: 0);
+    final g = Link.forTest();
+    var st = 0;
+    g.onState = (_) => st++;
+    await g.join('127.0.0.1', host.port, host.code!, viewer: true);
+    await _wait(() => st > 0);
+    g.sendToHost({'t': 'dart', 'mid': 'x', 'd': {'f': 20, 'm': 3}});
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(received, isEmpty);
+    expect(host.peerNames.single, contains('Anzeige'));
+    // auf Mitspielen umschalten → darf eintragen
+    g.setViewerMode(false);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    g.sendToHost({'t': 'dart', 'mid': 'x', 'd': {'f': 20, 'm': 3}});
+    await _wait(() => received.isNotEmpty);
+    expect(received, ['dart']);
+    await g.stop();
     await host.stop();
   });
 }

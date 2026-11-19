@@ -163,10 +163,20 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
               Positioned(
                 right: 8,
                 top: 4,
-                child: IconButton(
-                  tooltip: 'Anzeige beenden',
-                  icon: Icon(Icons.close_rounded, color: C.muted),
-                  onPressed: _leave,
+                child: Row(
+                  children: [
+                    if (Link.I.isClient)
+                      TextButton.icon(
+                        onPressed: () => LinkCoordinator.setViewer(false),
+                        icon: Icon(Icons.sports_esports_rounded, color: C.muted, size: 18),
+                        label: Text('Mitspielen', style: TextStyle(color: C.muted)),
+                      ),
+                    IconButton(
+                      tooltip: 'Anzeige beenden',
+                      icon: Icon(Icons.close_rounded, color: C.muted),
+                      onPressed: _leave,
+                    ),
+                  ],
                 ),
               ),
               if (show != null && c != null)

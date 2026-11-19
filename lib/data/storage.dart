@@ -419,7 +419,21 @@ class Store {
   static void _saveKnown(List<KnownHost> l) =>
       _p.setString('knownHosts', jsonEncode([for (final h in l.take(8)) h.toJson()]));
 
-  static void rememberHost(KnownHost h) => _saveKnown([h, ...knownHosts.where((x) => x.device != h.device)]);
+  /// Merkt sich einen Host (ein vorhandener Schlüssel bleibt erhalten).
+  static void rememberHost(KnownHost h) {
+    final old = knownHosts.where((x) => x.device == h.device).firstOrNull;
+    final merged = h.key == null && old?.key != null ? h.withKey(old!.key) : h;
+    _saveKnown([merged, ...knownHosts.where((x) => x.device != h.device)]);
+  }
+
+  /// Schlüssel für einen bekannten Host setzen oder löschen.
+  static void setHostKey(String device, String? key) {
+    final l = knownHosts;
+    final i = l.indexWhere((h) => h.device == device);
+    if (i < 0) return;
+    l[i] = l[i].withKey(key);
+    _saveKnown(l);
+  }
 
   static void updateHost(String device, {required String address, required int port, String? code}) {
     final l = knownHosts;
@@ -428,28 +442,38 @@ class Store {
     final h = l[i];
     final c = code ?? h.code;
     if (h.address == address && h.port == port && h.code == c) return;
-    l[i] = KnownHost(device: h.device, name: h.name, address: address, port: port, code: c, viewer: h.viewer, t: h.t);
+    l[i] = KnownHost(
+        device: h.device, name: h.name, address: address, port: port, code: c, viewer: h.viewer, key: h.key, t: h.t);
     _saveKnown(l);
   }
 
   static void forgetHost(String device) => _saveKnown(knownHosts.where((x) => x.device != device).toList());
 
   /// Geräte, die sich mit diesem Host verbinden dürfen (device → Name).
-  static Map<String, String> get trustedGuests {
+  /// Erlaubte Geräte mit gemeinsamem Schlüssel: device → {n: Name, k: Schlüssel}.
+  static Map<String, Map<String, String>> get _guests {
     try {
-      return Map<String, String>.from(jsonDecode(_p.getString('trustedGuests') ?? '{}') as Map);
+      final raw = jsonDecode(_p.getString('trustedGuests2') ?? '{}') as Map;
+      return {for (final e in raw.entries) '${e.key}': Map<String, String>.from(e.value as Map)};
     } catch (_) {
       return {};
     }
   }
 
-  static bool isTrustedGuest(String device) => device.isNotEmpty && trustedGuests.containsKey(device);
+  static void _saveGuests(Map<String, Map<String, String>> g) => _p.setString('trustedGuests2', jsonEncode(g));
 
-  static void trustGuest(String device, String name) =>
-      _p.setString('trustedGuests', jsonEncode({...trustedGuests, device: name}));
+  /// Erlaubte Geräte (device → Name).
+  static Map<String, String> get trustedGuests => {for (final e in _guests.entries) e.key: e.value['n'] ?? 'Gerät'};
 
-  static void untrustGuest(String device) =>
-      _p.setString('trustedGuests', jsonEncode(trustedGuests..remove(device)));
+  static bool isTrustedGuest(String device) => guestKey(device) != null;
+
+  /// Gemeinsamer Schlüssel mit einem erlaubten Gerät.
+  static String? guestKey(String device) => device.isEmpty ? null : _guests[device]?['k'];
+
+  static void trustGuest(String device, String name, String key) =>
+      _saveGuests({..._guests, device: {'n': name, 'k': key}});
+
+  static void untrustGuest(String device) => _saveGuests(_guests..remove(device));
 
   /// Caller-Ansage.
   static bool get caller => _p.getBool('caller') ?? false;
@@ -623,8 +647,15 @@ class KnownHost {
     required this.port,
     required this.code,
     this.viewer = false,
+    this.key,
     int? t,
   }) : t = t ?? DateTime.now().millisecondsSinceEpoch;
+
+  /// Gemeinsamer Schlüssel nach der ersten Erlaubnis (dann ohne Code verbinden).
+  final String? key;
+
+  KnownHost withKey(String? k) =>
+      KnownHost(device: device, name: name, address: address, port: port, code: code, viewer: viewer, key: k, t: t);
 
   final String device;
   final String name;
@@ -637,7 +668,7 @@ class KnownHost {
   final int t;
 
   Map<String, dynamic> toJson() =>
-      {'device': device, 'name': name, 'address': address, 'port': port, 'code': code, 'viewer': viewer, 't': t};
+      {'device': device, 'name': name, 'address': address, 'port': port, 'code': code, 'viewer': viewer, 't': t, 'key': key};
 
   factory KnownHost.fromJson(Map<String, dynamic> j) => KnownHost(
         device: j['device'] as String,
@@ -646,6 +677,7 @@ class KnownHost {
         port: (j['port'] as num?)?.toInt() ?? 47123,
         code: j['code'] as String,
         viewer: j['viewer'] as bool? ?? false,
+        key: j['key'] as String?,
         t: (j['t'] as num?)?.toInt(),
       );
 }

@@ -104,9 +104,22 @@ class MatchController extends ChangeNotifier {
 
   /// Host: Wurf eines gekoppelten Geräts.
   void throwDartExternal(Dart d) {
-    if (engine.finished) return;
+    if (engine.finished || inputLocked || !isValidDart(d)) return;
+    // Ist gerade ein Bot dran, gehört der Wurf nicht zu ihm (veralteter Stand beim Gast).
+    if (botTurn && !d.isControl) return;
     final ev = throwDart(d);
     _ext.add(ev);
+  }
+
+  /// Host: Eingaben von außen gerade gesperrt (z. B. während einer Jubel-Animation).
+  bool inputLocked = false;
+
+  /// Nur echte Felder bzw. bekannte Markierungen zulassen.
+  static bool isValidDart(Dart d) {
+    if (d.isControl) return d.field == -1 && (d.mult == 0 || d.mult == 1);
+    if (d.field == 0) return d.mult == 1;
+    if (d.field == 25) return d.mult == 1 || d.mult == 2;
+    return d.field >= 1 && d.field <= 20 && d.mult >= 1 && d.mult <= 3;
   }
 
   /// Gast: Stand vom Host übernehmen. Neue Würfe am Ende werden als Ereignisse
@@ -139,7 +152,22 @@ class MatchController extends ChangeNotifier {
     return true;
   }
 
-  bool get canUndo => darts.isNotEmpty && !committed && (!hasBot || _humanDartExists);
+  bool get canUndo => darts.isNotEmpty && !committed && (!hasBot || _humanDartExistsCached);
+
+  // Zwischenspeicher: die Prüfung spielt das Match nach – nur neu, wenn sich die Würfe ändern.
+  int _undoLen = -1;
+  Dart? _undoLast;
+  bool _undoVal = false;
+
+  bool get _humanDartExistsCached {
+    final last = darts.isEmpty ? null : darts.last;
+    if (_undoLen != darts.length || !identical(_undoLast, last)) {
+      _undoLen = darts.length;
+      _undoLast = last;
+      _undoVal = _humanDartExists;
+    }
+    return _undoVal;
+  }
 
   bool get _humanDartExists {
     // Gibt es noch einen Pfeil eines Menschen, der zurückgenommen werden kann?
@@ -238,6 +266,7 @@ class MatchController extends ChangeNotifier {
         final key = botLevelOf(players[b].profileId)?.name ?? (customBotOf(players[b].profileId) != null ? 'custom' : null);
         if (key == null) continue;
         final botRank = results.firstWhere((x) => x.playerIndex == b).rank;
+        if (r.rank == botRank) continue; // Gleichstand zählt weder als Sieg noch als Niederlage
         s.bots[key] = r.rank < botRank ? [1, 0] : [0, 1];
       }
       final e = engine;

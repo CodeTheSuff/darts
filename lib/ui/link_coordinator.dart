@@ -46,7 +46,7 @@ class LinkCoordinator {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     _showingBoard = true;
-    nav.push(MaterialPageRoute<void>(builder: (_) => const ScoreboardScreen())).then((_) {
+    nav.push(MaterialPageRoute<void>(settings: const RouteSettings(name: 'scoreboard'), builder: (_) => const ScoreboardScreen())).then((_) {
       _showingBoard = false;
     });
   }
@@ -163,7 +163,7 @@ class LinkCoordinator {
         m.throwDartExternal(Dart.fromJson(Map<String, dynamic>.from(msg['d'] as Map)));
       case 'undo':
         final m = hostMatch;
-        if (m == null || m.matchId != msg['mid']) return;
+        if (m == null || m.matchId != msg['mid'] || m.inputLocked) return;
         m.undo();
       case 'start':
         final c = MatchController.fromJson(Map<String, dynamic>.from(msg['match'] as Map));
@@ -174,7 +174,32 @@ class LinkCoordinator {
 
   // ---------------------------------------------------------------- Gast empfängt
 
+  /// Zuletzt empfangener Stand (für den Wechsel zwischen Anzeige und Mitspielen).
+  static Map<String, dynamic>? _lastState;
+
+  /// Gast: zwischen Mitspielen und reiner Anzeige (Punktetafel) wechseln.
+  static void setViewer(bool v) {
+    if (viewer == v) return;
+    viewer = v;
+    Link.I.setViewerMode(v);
+    final st = _lastState;
+    if (v) {
+      // laufendes Mitspiel-Match schließen, Punktetafel zeigen
+      final r = _clientRoute;
+      if (r != null && r.isActive) navigatorKey.currentState?.removeRoute(r);
+      clientMatch = null;
+      _clientRoute = null;
+      viewerState.value = st;
+      _showBoard();
+    } else {
+      final nav = navigatorKey.currentState;
+      if (_showingBoard && nav != null) nav.popUntil((r) => r.settings.name != 'scoreboard');
+      if (st != null) _onState(st);
+    }
+  }
+
   static void _onState(Map<String, dynamic> state) {
+    _lastState = state;
     if (viewer) {
       viewerState.value = state;
       _showBoard();

@@ -136,7 +136,20 @@ class TMatch {
   List<int> points = [0, 0];
   List<int> darts = [0, 0];
 
+  /// Zeitpunkt der letzten Änderung dieses Ergebnisses (ms), für den Abgleich.
+  int at = 0;
+
   bool get played => winnerSide != null;
+
+  /// Ergebnis von [o] übernehmen.
+  void copyResult(TMatch o) {
+    winnerSide = o.winnerSide;
+    legs = List.of(o.legs);
+    sets = List.of(o.sets);
+    points = List.of(o.points);
+    darts = List.of(o.darts);
+    at = o.at;
+  }
 
   double avg(int side) => darts[side] == 0 ? 0 : points[side] / darts[side] * 3;
 
@@ -155,6 +168,7 @@ class TMatch {
         's': sets,
         'pt': points,
         'd': darts,
+        if (at != 0) 'at': at,
       };
 
   factory TMatch.fromJson(Map<String, dynamic> j) {
@@ -174,7 +188,8 @@ class TMatch {
       ..legs = li(j['l'])
       ..sets = li(j['s'])
       ..points = li(j['pt'])
-      ..darts = li(j['d']);
+      ..darts = li(j['d'])
+      ..at = (j['at'] as num?)?.toInt() ?? 0;
   }
 }
 
@@ -612,7 +627,31 @@ class Tournament {
     m.sets = List.of(sets ?? [0, 0]);
     m.points = List.of(points ?? [0, 0]);
     m.darts = List.of(darts ?? [0, 0]);
+    m.at = DateTime.now().millisecondsSinceEpoch;
     finished = allDone;
+  }
+
+  /// Kennung des Ergebnisstands (ändert sich bei jedem Eintrag oder Zurücksetzen).
+  String get revision {
+    var latest = 0;
+    for (final m in matches) {
+      if (m.at > latest) latest = m.at;
+    }
+    return '$playedCount:$latest';
+  }
+
+  /// Ergebnisse eines anderen Geräts einmischen: je Match gewinnt die neuere Änderung.
+  /// Liefert true, wenn sich etwas geändert hat.
+  bool mergeFrom(Tournament other) {
+    var changed = false;
+    for (final o in other.matches) {
+      final m = matches.where((x) => x.id == o.id).firstOrNull;
+      if (m == null || o.at <= m.at) continue;
+      m.copyResult(o);
+      changed = true;
+    }
+    if (changed) finished = allDone;
+    return changed;
   }
 
   /// Darf das Ergebnis zurückgenommen werden? (kein Folge-Match gespielt)
@@ -632,6 +671,7 @@ class Tournament {
     m.sets = [0, 0];
     m.points = [0, 0];
     m.darts = [0, 0];
+    m.at = DateTime.now().millisecondsSinceEpoch;
     finished = false;
   }
 

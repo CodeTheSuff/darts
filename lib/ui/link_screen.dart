@@ -61,11 +61,12 @@ class _LinkScreenState extends State<LinkScreen> {
     if (mounted) setState(() => _busy = false);
   }
 
-  Future<void> _join(String address, int port, String code, String? name, {bool viewer = false}) async {
+  Future<void> _join(String address, int port, String code, String? name,
+      {bool viewer = false, String? hostDevice}) async {
     _saveName();
     setState(() => _busy = true);
     LinkCoordinator.viewer = viewer;
-    final ok = await l.join(address, port, code, name: name, viewer: viewer);
+    final ok = await l.join(address, port, code, name: name, viewer: viewer, hostDevice: hostDevice);
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
@@ -118,7 +119,12 @@ class _LinkScreenState extends State<LinkScreen> {
 
   Future<void> _joinRoom(Room r, {bool viewer = false}) async {
     final known = Store.knownHosts.where((h) => h.device == r.device).firstOrNull;
-    final code = r.code ?? known?.code ?? await _askCode(r.name);
+    if (known?.key != null) {
+      // schon gekoppelt: per Schlüssel, ohne Code
+      await _join(r.address, r.port, '', r.name, viewer: viewer, hostDevice: r.device);
+      return;
+    }
+    final code = r.code ?? await _askCode(r.name);
     if (code == null) return;
     await _join(r.address, r.port, code, r.name, viewer: viewer);
   }
@@ -135,7 +141,7 @@ class _LinkScreenState extends State<LinkScreen> {
     LinkCoordinator.viewer = viewer;
     var ok = false;
     for (final (a, p, c) in tries) {
-      ok = await l.join(a, p, c, name: h.name, viewer: viewer);
+      ok = await l.join(a, p, c, name: h.name, viewer: viewer, hostDevice: h.key != null ? h.device : null);
       if (ok) break;
     }
     if (!mounted) return;
@@ -153,6 +159,35 @@ class _LinkScreenState extends State<LinkScreen> {
       l.startDiscovery();
     }
   }
+
+  /// Zwei klare Knöpfe: mitspielen (eintragen) oder nur anzeigen (Punktetafel).
+  Widget _roleButtons({required VoidCallback onPlay, required VoidCallback onView, bool viewerFirst = false}) => Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _busy ? null : onPlay,
+              icon: const Icon(Icons.sports_esports_rounded, size: 18),
+              label: const Text('Mitspielen'),
+              style: FilledButton.styleFrom(
+                backgroundColor: viewerFirst ? C.surface3 : C.dbl,
+                foregroundColor: viewerFirst ? C.text : C.ink,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _busy ? null : onView,
+              icon: const Icon(Icons.tv_rounded, size: 18),
+              label: const Text('Nur anzeigen'),
+              style: FilledButton.styleFrom(
+                backgroundColor: viewerFirst ? C.accent : C.surface3,
+                foregroundColor: viewerFirst ? C.onAccent : C.text,
+              ),
+            ),
+          ),
+        ],
+      );
 
   Future<void> _forget(KnownHost h) async {
     final ok = await showDialog<bool>(
@@ -204,32 +239,10 @@ class _LinkScreenState extends State<LinkScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : () => _joinKnown(h, viewer: false),
-                  icon: const Icon(Icons.sports_esports_rounded, size: 18),
-                  label: const Text('Mitspielen'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: h.viewer ? C.surface3 : C.dbl,
-                    foregroundColor: h.viewer ? C.text : C.ink,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : () => _joinKnown(h, viewer: true),
-                  icon: const Icon(Icons.tv_rounded, size: 18),
-                  label: const Text('Nur anzeigen'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: h.viewer ? C.accent : C.surface3,
-                    foregroundColor: h.viewer ? C.onAccent : C.text,
-                  ),
-                ),
-              ),
-            ],
+          _roleButtons(
+            onPlay: () => _joinKnown(h, viewer: false),
+            onView: () => _joinKnown(h, viewer: true),
+            viewerFirst: h.viewer,
           ),
         ],
       ),
@@ -404,52 +417,39 @@ class _LinkScreenState extends State<LinkScreen> {
                     ],
                   ),
                 ),
-              for (final r in rooms)
+              for (final r in rooms) ...[
                 GlowCard(
                   tint: C.dbl,
                   strength: 0.10,
                   borderAlpha: 0.4,
-                  onTap: _busy ? null : () => _joinRoom(r),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.phone_android_rounded, color: C.dbl, size: 30),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(r.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                            Text(r.address, style: TextStyle(color: C.muted, fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      Row(
                         children: [
-                          Text(
-                            'Beitreten',
-                            style: TextStyle(color: C.dbl, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 6),
-                          GestureDetector(
-                            onTap: _busy ? null : () => _joinRoom(r, viewer: true),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          Icon(Icons.phone_android_rounded, color: C.dbl, size: 30),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.tv_rounded, size: 16, color: C.accent),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Nur anzeigen',
-                                  style: TextStyle(color: C.accent, fontWeight: FontWeight.w700, fontSize: 13),
-                                ),
+                                Text(r.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                Text(r.address, style: TextStyle(color: C.muted, fontSize: 13)),
                               ],
                             ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      _roleButtons(
+                        onPlay: () => _joinRoom(r),
+                        onView: () => _joinRoom(r, viewer: true),
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 8),
+              ],
             ],
           );
         },
@@ -561,6 +561,36 @@ class _LinkScreenState extends State<LinkScreen> {
           ],
         ),
       ),
+      if (l.isConnected) ...[
+        const SizedBox(height: 10),
+        GlowCard(
+          strength: 0.08,
+          padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+          child: Row(
+            children: [
+              Icon(LinkCoordinator.viewer ? Icons.tv_rounded : Icons.sports_esports_rounded, color: C.accent),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Nur anzeigen (Punktetafel)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(
+                        LinkCoordinator.viewer
+                            ? 'Dieses Gerät zeigt nur den Spielstand, eintragen geht hier nicht.'
+                            : 'Aus: Auf diesem Gerät kann auch eingetragen werden.',
+                        style: TextStyle(color: C.muted, fontSize: 13)),
+                  ],
+                ),
+              ),
+              Switch(
+                value: LinkCoordinator.viewer,
+                onChanged: (v) => setState(() => LinkCoordinator.setViewer(v)),
+              ),
+            ],
+          ),
+        ),
+      ],
       const SizedBox(height: 8),
       Text(
         'Spiele, die auf einem gekoppelten Handy starten, erscheinen hier automatisch.',

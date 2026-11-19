@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -35,7 +36,27 @@ class _Peer {
   /// Vom Host erlaubt (vorher bekommt das Gerät keine Daten).
   bool approved = false;
   bool helloSeen = false;
+
+  /// Mit richtigem Code verbunden (sonst nur per Schlüssel erlaubt).
+  bool byCode = false;
+
+  /// Nur Anzeige: darf nichts eintragen.
+  bool viewer = false;
+
+  /// Schlüssel-Anmeldung: Herausforderung des Hosts.
+  String? challenge;
+  String? key;
 }
+
+/// Zufällige Hex-Zeichenkette (kryptografisch sicher).
+String randomHex(int bytes) {
+  final r = Random.secure();
+  return [for (var i = 0; i < bytes; i++) r.nextInt(256).toRadixString(16).padLeft(2, '0')].join();
+}
+
+/// Nachweis, dass man den gemeinsamen Schlüssel kennt (ohne ihn zu senden).
+String authProof(String key, String role, String nonce, String device) =>
+    Hmac(sha256, utf8.encode(key)).convert(utf8.encode('$role|$nonce|$device')).toString();
 
 /// Kopplung mehrerer Handys im lokalen Netz (WLAN oder Hotspot).
 ///
@@ -128,7 +149,7 @@ class Link extends ChangeNotifier {
   /// Anzahl der anderen verbundenen Geräte.
   int get peerCount => isHost ? _approved.length : (isConnected ? max(1, remoteDevices - 1) : 0);
 
-  List<String> get peerNames => [for (final p in _approved) p.name];
+  List<String> get peerNames => [for (final p in _approved) p.viewer ? '${p.name} · Anzeige' : p.name];
 
   // ---------------------------------------------------------------- Host
 
@@ -176,7 +197,9 @@ class Link extends ChangeNotifier {
       await req.response.close();
       return;
     }
-    if (req.uri.queryParameters['code'] != code) {
+    final byKey = req.uri.queryParameters['auth'] == '1';
+    final byCode = req.uri.queryParameters['code'] == code;
+    if (!byKey && !byCode) {
       _fails[ip] = fails..add(now);
       req.response.statusCode = HttpStatus.forbidden;
       await req.response.close();
@@ -190,7 +213,7 @@ class Link extends ChangeNotifier {
     _fails.remove(ip);
     final ws = await WebSocketTransformer.upgrade(req);
     ws.pingInterval = const Duration(seconds: 4);
-    final peer = _Peer(ws, ip);
+    final peer = _Peer(ws, ip)..byCode = byCode;
     _peers.add(peer);
     ws.listen(
       (data) => _hostReceive(peer, data),
@@ -211,6 +234,11 @@ class Link extends ChangeNotifier {
     }
   }
 
+  Future<void> _deny(_Peer peer, [String reason = '']) async {
+    _send(peer.ws, {'t': 'denied', 'reason': reason});
+    await peer.ws.close();
+  }
+
   Future<void> _onHello(_Peer peer, Map<String, dynamic> msg) async {
     if (peer.helloSeen) return;
     peer.helloSeen = true;
@@ -218,20 +246,53 @@ class Link extends ChangeNotifier {
     final name = '${msg['name'] ?? 'Gerät'}';
     peer.device = device.length > 64 ? device.substring(0, 64) : device;
     peer.name = name.length > 40 ? name.substring(0, 40) : name;
-    var ok = trustAll || Store.isTrustedGuest(peer.device);
+    peer.viewer = msg['viewer'] == true;
+    if (peer.device.isEmpty) return _deny(peer);
+
+    // Bekanntes Gerät mit Schlüssel: gegenseitiger Nachweis, kein Code nötig.
+    if (msg['auth'] == true) {
+      final key = Store.guestKey(peer.device);
+      final nonce = '${msg['nonce'] ?? ''}';
+      if (key == null || nonce.length < 16) return _deny(peer, 'unknown');
+      peer.key = key;
+      peer.challenge = randomHex(16);
+      _send(peer.ws, {
+        't': 'auth',
+        'hostDevice': Store.deviceId,
+        'proof': authProof(key, 'host', nonce, Store.deviceId),
+        'nonce': peer.challenge,
+      });
+      return;
+    }
+
+    // Neues Gerät (mit Code): nur nach Erlaubnis am Host.
+    if (!peer.byCode) return _deny(peer);
+    var ok = trustAll;
     if (!ok) {
       _send(peer.ws, {'t': 'pending'});
       ErrorLog.crumb('Kopplung: ${peer.name} fragt nach Erlaubnis');
-      ok = peer.device.isNotEmpty && (await onJoinRequest?.call(peer.device, peer.name) ?? false);
+      ok = await onJoinRequest?.call(peer.device, peer.name) ?? false;
       if (!_peers.contains(peer)) return; // inzwischen getrennt
-      if (ok) {
-        Store.trustGuest(peer.device, peer.name);
-      } else {
-        _send(peer.ws, {'t': 'denied'});
-        await peer.ws.close();
-        return;
-      }
+      if (!ok) return _deny(peer);
     }
+    final key = randomHex(32);
+    Store.trustGuest(peer.device, peer.name, key);
+    _send(peer.ws, {'t': 'welcome', 'key': key, 'hostDevice': Store.deviceId});
+    _approve(peer);
+  }
+
+  void _onAuthReply(_Peer peer, Map<String, dynamic> msg) {
+    final key = peer.key, ch = peer.challenge;
+    if (peer.approved || key == null || ch == null) return;
+    peer.challenge = null;
+    if (msg['proof'] != authProof(key, 'guest', ch, peer.device)) {
+      _deny(peer, 'unknown');
+      return;
+    }
+    _approve(peer);
+  }
+
+  void _approve(_Peer peer) {
     peer.approved = true;
     notifyListeners();
     _send(peer.ws, _stateMessage(full: true));
@@ -245,9 +306,19 @@ class Link extends ChangeNotifier {
       _onHello(peer, msg);
       return;
     }
+    if (msg['t'] == 'auth2') {
+      _onAuthReply(peer, msg);
+      return;
+    }
     // Nicht erlaubte Geräte dürfen nichts tun.
     if (!peer.approved) return;
     switch (msg['t']) {
+      case 'mode':
+        peer.viewer = msg['viewer'] == true;
+        notifyListeners();
+      case 'dart' || 'undo' || 'start':
+        // Anzeige-Geräte dürfen nichts eintragen.
+        if (!peer.viewer) onHostMessage?.call(msg);
       case 'share':
         // an die anderen Gäste weiterreichen und selbst anzeigen
         for (final p in _approved) {
@@ -269,6 +340,7 @@ class Link extends ChangeNotifier {
 
   /// Zuletzt an alle gesendetes Turnier (gleiches Objekt = unverändert).
   Object? _lastTour;
+  Object? _tourOfLast;
 
   /// Stand für die Gäste. Ein unverändertes Turnier wird nicht jedes Mal mitgeschickt.
   Map<String, dynamic> _stateMessage({bool full = false}) {
@@ -280,6 +352,7 @@ class Link extends ChangeNotifier {
       ...?hostState?.call(),
     };
     final tour = st['tournament'];
+    _tourOfLast = tour;
     if (!full && tour != null && identical(tour, _lastTour)) {
       st.remove('tournament');
       st['tsame'] = true;
@@ -303,7 +376,7 @@ class Link extends ChangeNotifier {
     final sw = Stopwatch()..start();
     final msg = _stateMessage();
     // Alle bekommen dieses Turnier jetzt – beim nächsten Mal reicht „unverändert“.
-    _lastTour = hostState?.call()['tournament'];
+    _lastTour = _tourOfLast;
     ErrorLog.crumb('Stand an ${peers.length} Gerät(e) gesendet (${sw.elapsedMilliseconds} ms)');
     for (final p in peers) {
       _send(p.ws, msg);
@@ -352,8 +425,19 @@ class Link extends ChangeNotifier {
   /// Gast ist als reine Anzeige verbunden (wird bei bekannten Geräten gemerkt).
   bool joinedAsViewer = false;
 
-  Future<bool> join(String address, int port, String roomCode, {String? name, bool viewer = false}) async {
+  /// Gast: erwartetes Host-Gerät (bei bekannten Geräten) und ob per Schlüssel angemeldet wird.
+  String? _expectHost;
+  bool _byKey = false;
+  String? _nonce;
+
+  /// Verbindet sich mit einem Raum. Hat das Gerät für [hostDevice] einen Schlüssel,
+  /// wird kein Code gesendet, und der Host muss sich selbst ausweisen.
+  Future<bool> join(String address, int port, String roomCode,
+      {String? name, bool viewer = false, String? hostDevice}) async {
     await stop();
+    _expectHost = hostDevice;
+    _byKey = hostDevice != null &&
+        (Store.knownHosts.where((h) => h.device == hostDevice).firstOrNull?.key?.isNotEmpty ?? false);
     _remembered = null;
     _lastTourIn = null;
     awaitingApproval = false;
@@ -379,12 +463,21 @@ class Link extends ChangeNotifier {
 
   Future<bool> _connect() async {
     try {
-      final ws = await WebSocket.connect('ws://$hostAddress:$hostPort/darts?code=$code')
-          .timeout(const Duration(seconds: 5));
+      final q = _byKey ? 'auth=1' : 'code=${Uri.encodeQueryComponent(code ?? '')}';
+      final ws = await WebSocket.connect('ws://$hostAddress:$hostPort/darts?$q').timeout(const Duration(seconds: 5));
       ws.pingInterval = const Duration(seconds: 4);
       _ws = ws;
       status = 'Verbunden';
-      _send(ws, {'t': 'hello', 'device': Store.deviceId, 'name': Store.deviceName});
+      _nonce = randomHex(16);
+      _send(ws, {
+        't': 'hello',
+        'device': Store.deviceId,
+        'name': Store.deviceName,
+        'viewer': joinedAsViewer,
+        if (_byKey) 'auth': true,
+        if (_byKey) 'nonce': _nonce,
+      });
+      if (_byKey) awaitingApproval = true;
       ws.listen(
         _clientReceive,
         onDone: _lostHost,
@@ -421,6 +514,41 @@ class Link extends ChangeNotifier {
     final msg = _decode(data);
     if (msg == null) return;
     switch (msg['t']) {
+      case 'auth':
+        // Host muss beweisen, dass er der bekannte ist – sonst sofort trennen.
+        final key = Store.knownHosts.where((h) => h.device == _expectHost).firstOrNull?.key;
+        final ok = key != null &&
+            msg['hostDevice'] == _expectHost &&
+            msg['proof'] == authProof(key, 'host', _nonce ?? '', _expectHost ?? '');
+        if (!ok) {
+          _wantConnected = false;
+          awaitingApproval = false;
+          denied = true;
+          status = 'Das Gerät konnte sich nicht ausweisen – Verbindung abgebrochen';
+          ErrorLog.crumb('Kopplung: Host-Nachweis falsch, getrennt');
+          _ws?.close();
+          notifyListeners();
+          return;
+        }
+        sendToHost({'t': 'auth2', 'proof': authProof(key, 'guest', '${msg['nonce']}', Store.deviceId)});
+      case 'welcome':
+        final hd = '${msg['hostDevice'] ?? ''}';
+        final key = msg['key'] as String?;
+        if (hd.isNotEmpty && key != null && key.length >= 32) {
+          _expectHost = hd;
+          Store.rememberHost(KnownHost(
+            device: hd,
+            name: hostName ?? 'Gerät',
+            address: hostAddress ?? '',
+            port: hostPort ?? defaultPort,
+            code: code ?? '',
+            viewer: joinedAsViewer,
+            key: key,
+          ));
+          // Wiederverbinden ab jetzt mit Schlüssel
+          _byKey = true;
+          _remembered = hd;
+        }
       case 'pending':
         awaitingApproval = true;
         status = 'Warte auf Bestätigung am anderen Gerät …';
@@ -429,7 +557,13 @@ class Link extends ChangeNotifier {
         awaitingApproval = false;
         denied = true;
         _wantConnected = false;
-        status = 'Das andere Gerät hat die Verbindung abgelehnt';
+        if (msg['reason'] == 'unknown' && _expectHost != null) {
+          // Host kennt den Schlüssel nicht mehr → beim nächsten Mal mit Code neu koppeln.
+          Store.setHostKey(_expectHost!, null);
+          status = 'Dieses Gerät ist dort nicht mehr erlaubt – bitte mit Code neu koppeln';
+        } else {
+          status = 'Das andere Gerät hat die Verbindung abgelehnt';
+        }
         notifyListeners();
       case 'state':
         if (awaitingApproval) {
@@ -444,7 +578,8 @@ class Link extends ChangeNotifier {
         remoteDevices = (msg['devices'] as num?)?.toInt() ?? 2;
         hostName = msg['host'] as String? ?? hostName;
         final hd = msg['hostDevice'] as String?;
-        if (hd != null && hd != _remembered) {
+        // Nur ein ausgewiesener Host (Schlüssel) bzw. ein per Code erlaubter wird gemerkt.
+        if (hd != null && hd != _remembered && (!_byKey || hd == _expectHost)) {
           _remembered = hd;
           Store.rememberHost(KnownHost(
             device: hd,
@@ -462,6 +597,19 @@ class Link extends ChangeNotifier {
       case 'have' || 'syncpkg' || 'syncreq':
         onSync?.call(msg, sendToHost, hostName ?? 'Host');
     }
+  }
+
+  /// Gast: zwischen Mitspielen und reiner Anzeige wechseln.
+  void setViewerMode(bool viewer) {
+    joinedAsViewer = viewer;
+    sendToHost({'t': 'mode', 'viewer': viewer});
+    final hd = _remembered ?? _expectHost;
+    final h = Store.knownHosts.where((x) => x.device == hd).firstOrNull;
+    if (h != null) {
+      Store.rememberHost(KnownHost(
+          device: h.device, name: h.name, address: h.address, port: h.port, code: h.code, viewer: viewer, key: h.key));
+    }
+    notifyListeners();
   }
 
   /// Gast: Nachricht an den Host.
@@ -518,17 +666,43 @@ class Link extends ChangeNotifier {
       final list = rooms.value.where((r) => now.difference(r.seen).inSeconds < 9).toList();
       if (list.length != rooms.value.length) rooms.value = list;
     });
-    // Viele Router und manche Handys verwerfen Broadcasts. Darum zusätzlich
-    // das eigene WLAN direkt nach einem Raum absuchen.
-    _scanTimer = Timer.periodic(const Duration(seconds: 2), (_) => _scanNetwork(includeSelf: includeSelf));
+    // Viele Router und manche Handys verwerfen Broadcasts. Darum:
+    // bekannte und gefundene Geräte alle 2 s direkt fragen, das ganze Netz gebremst durchsuchen.
+    _includeSelf = includeSelf;
+    _scanTimer = Timer.periodic(const Duration(seconds: 2), (_) => _quickProbe());
+    _quickProbe();
     _scanNetwork(includeSelf: includeSelf);
   }
 
   Timer? _scanTimer;
+  Timer? _sweepAgain;
   bool _scanning = false;
+  bool _quick = false;
+  bool _includeSelf = false;
 
-  /// Gleichzeitig abgefragte Adressen bei der Netzsuche.
-  static const scanBatch = 1024;
+  /// Gleichzeitig abgefragte Adressen bei der Netzsuche (mehr überfordert die Nachbar-Tabelle von Android/Router).
+  static const scanBatch = 512;
+
+  /// Pause zwischen zwei kompletten Durchläufen.
+  static const sweepPause = Duration(seconds: 30);
+
+  /// Bekannte Geräte und gefundene Räume direkt fragen (auf ihrem eigenen Port).
+  Future<void> _quickProbe() async {
+    if (_quick || _scanTimer == null) return;
+    _quick = true;
+    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1500);
+    try {
+      final targets = <(String, int)>{
+        for (final h in Store.knownHosts)
+          if (h.address.isNotEmpty) (h.address, h.port),
+        for (final r in rooms.value) (r.address, r.port),
+      };
+      await Future.wait([for (final (a, p) in targets) _probe(client, a, _includeSelf, port: p, patient: true)]);
+    } finally {
+      client.close(force: true);
+      _quick = false;
+    }
+  }
 
   /// Fortschritt der Netzsuche (geprüft, gesamt).
   final scanProgress = ValueNotifier<(int, int)>((0, 0));
@@ -536,17 +710,17 @@ class Link extends ChangeNotifier {
   void _addRoom(String address, Map<String, dynamic> j, {bool includeSelf = false}) {
     if (j['app'] != 'darts_counter') return;
     if (!includeSelf && j['device'] == Store.deviceId) return;
+    final name = '${j['name'] ?? 'Gerät'}';
     final room = Room(
       address: address,
-      port: (j['port'] as num).toInt(),
+      port: (j['port'] as num?)?.toInt() ?? defaultPort,
       code: j['code'] as String?,
-      name: j['name'] as String? ?? 'Gerät',
-      device: j['device'] as String? ?? '',
+      name: name.length > 40 ? name.substring(0, 40) : name,
+      device: '${j['device'] ?? ''}',
     );
+    // Gespeicherte Adressen werden hier bewusst NICHT überschrieben: Suchmeldungen sind
+    // nicht beglaubigt. Erst eine echte, ausgewiesene Verbindung merkt sich die Adresse.
     rooms.value = rooms.value.where((r) => r.device != room.device).toList()..add(room);
-    if (room.device.isNotEmpty) {
-      Store.updateHost(room.device, address: room.address, port: room.port);
-    }
   }
 
   /// Höchstens so viele Adressen werden pro Suchlauf abgefragt.
@@ -621,17 +795,11 @@ class Link extends ChangeNotifier {
   }
 
   Future<void> _scanNetwork({bool includeSelf = false}) async {
-    if (_scanning || _udpListen == null && _scanTimer == null) return;
+    if (_scanning || _scanTimer == null) return;
     _scanning = true;
-    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 350);
+    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 800);
     try {
-      // Zuerst bekannte Geräte und schon gefundene Räume (hält sie in der Liste)
-      final known = {
-        for (final h in Store.knownHosts)
-          if (h.address.isNotEmpty) h.address,
-        for (final r in rooms.value) r.address,
-      }.toList();
-      await Future.wait([for (final a in known) _probe(client, a, includeSelf)]);
+      final known = {for (final h in Store.knownHosts) h.address};
       final targets = (await scanTargets()).where((a) => !known.contains(a)).toList();
       scanProgress.value = (0, targets.length);
       for (var i = 0; i < targets.length && _scanTimer != null; i += scanBatch) {
@@ -639,20 +807,24 @@ class Link extends ChangeNotifier {
           for (final t in targets.skip(i).take(scanBatch)) _probe(client, t, includeSelf),
         ]);
         scanProgress.value = (min(i + scanBatch, targets.length), targets.length);
-        // gefundene Räume zwischendurch auffrischen, damit sie nicht wieder verschwinden
-        if (i > 0 && i % (scanBatch * 2) == 0) {
-          await Future.wait([for (final r in rooms.value) _probe(client, r.address, includeSelf)]);
-        }
       }
     } finally {
       client.close(force: true);
       _scanning = false;
+      // Nach einem kompletten Durchlauf erst nach einer Pause wieder (Akku, Router).
+      if (_scanTimer != null) {
+        _sweepAgain?.cancel();
+        _sweepAgain = Timer(sweepPause, () => _scanNetwork(includeSelf: includeSelf));
+      }
     }
   }
 
-  Future<void> _probe(HttpClient client, String address, bool includeSelf) async {
+  Future<void> _probe(HttpClient client, String address, bool includeSelf,
+      {int port = defaultPort, bool patient = false}) async {
     try {
-      final req = await client.get(address, defaultPort, '/darts/info').timeout(const Duration(milliseconds: 500));
+      final req = await client
+          .get(address, port, '/darts/info')
+          .timeout(Duration(milliseconds: patient ? 1800 : 1100));
       final res = await req.close().timeout(const Duration(seconds: 2));
       if (res.statusCode != 200) {
         await res.drain<void>();
@@ -670,6 +842,9 @@ class Link extends ChangeNotifier {
     _prune?.cancel();
     _scanTimer?.cancel();
     _scanTimer = null;
+    _sweepAgain?.cancel();
+    _sweepAgain = null;
+    scanProgress.value = (0, 0);
     rooms.value = [];
   }
 

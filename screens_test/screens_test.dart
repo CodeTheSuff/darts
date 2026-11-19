@@ -63,7 +63,7 @@ Widget app(AppPalette p, Widget home) => RepaintBoundary(
 );
 
 Future<void> prep(WidgetTester tester, AppPalette p) async {
-  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.4.0', 'sound': false, 'celebrations': false});
+  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.4.1', 'sound': false, 'celebrations': false});
   await Store.init();
   ThemeHost.apply(p);
   tester.view.physicalSize = const Size(412, 900) * 2;

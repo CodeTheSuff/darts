@@ -52,7 +52,13 @@ class _GameScreenState extends State<GameScreen> {
   int _pauseToken = 0;
   _CelebrationData? _celebration;
   Completer<void>? _celebrationDone;
-  bool _busy = false;
+  bool _busyFlag = false;
+  bool get _busy => _busyFlag;
+  set _busy(bool v) {
+    _busyFlag = v;
+    // Während Animationen keine Würfe/Undo von gekoppelten Geräten annehmen.
+    ctl.inputLocked = v;
+  }
   bool _showResult = false;
   int? _statsPlayer;
 
@@ -78,6 +84,7 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
+    ctl.inputLocked = false;
     LinkCoordinator.gameClosed(ctl);
     _extSub?.cancel();
     Link.I.removeListener(_onLink);
@@ -292,7 +299,9 @@ class _GameScreenState extends State<GameScreen> {
 
     if (!needsShow) {
       await Future<void>.delayed(const Duration(milliseconds: 1000));
-      if (mounted && token == _pauseToken) setState(() => _pause = null);
+      // Inzwischen Rückgängig oder neue Aufnahme? Dann nichts mehr ansagen.
+      if (!mounted || token != _pauseToken) return;
+      setState(() => _pause = null);
       _announceRequire();
       _scheduleBot();
       return;

@@ -9,10 +9,16 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.4.0';
+const appVersion = '2.4.1';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.4.1': [
+    (Icons.key_rounded, 'Kopplung mit Schlüssel', 'Gekoppelte Geräte weisen sich gegenseitig aus – Fremde können sich nicht als dein Gerät ausgeben'),
+    (Icons.tv_rounded, 'Mitspielen oder Anzeige', 'Klare Auswahl beim Verbinden und jederzeit umschaltbar'),
+    (Icons.auto_awesome_rounded, 'Logo', 'Größere Scheibe in der Ecke'),
+    (Icons.build_rounded, 'Verbesserungen', 'Turnier-Abgleich mit Korrekturen, sparsamere Suche, kleinere Fehler behoben'),
+  ],
   '2.4.0': [
     (Icons.swap_horiz_rounded, 'Single Out anbieten', 'Wer 5 Aufnahmen am Double hängt, kann das Leg auch single beenden'),
     (Icons.tv_rounded, 'Größere Anzeige', 'Finish-Weg, Darts, Namen und Average auf dem 2. Bildschirm viel größer'),

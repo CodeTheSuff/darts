@@ -173,8 +173,12 @@ class Sync {
           'players': [for (final p in players) p.toJson()],
         });
         final existing = TournamentStore.byId(mapped.id);
-        if (existing == null || mapped.playedCount > existing.playedCount) {
+        if (existing == null) {
           TournamentStore.save(mapped);
+          tCount++;
+        } else if (existing.mergeFrom(mapped)) {
+          // je Match die neuere Änderung (auch Korrekturen und verschiedene Matches)
+          TournamentStore.save(existing);
           tCount++;
         }
       } catch (_) {}
@@ -190,7 +194,7 @@ class AutoSync {
   /// Was dieses Gerät hat (nur Schlüssel, keine Daten).
   static Map<String, dynamic> have() => {
         'keys': [for (final e in Store.log) e.key],
-        'tours': {for (final t in TournamentStore.all()) t.id: t.playedCount},
+        'tours': {for (final t in TournamentStore.all()) t.id: t.revision},
         'arch': [for (final a in Store.archive) a.rid],
       };
 
@@ -202,7 +206,7 @@ class AutoSync {
     final entries = Store.log.where((e) => !keys.contains(e.key)).toList();
     final ts = [
       for (final t in TournamentStore.all())
-        if (!tours.containsKey(t.id) || t.playedCount > (tours[t.id] as num).toInt()) t.toJson(),
+        if (!tours.containsKey(t.id) || '${tours[t.id]}' != t.revision) t.toJson(),
     ];
     final records = Store.archive.where((a) => !arch.contains(a.rid)).toList();
     if (entries.isEmpty && ts.isEmpty && records.isEmpty) return null;
