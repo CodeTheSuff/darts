@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'data/error_log.dart';
 import 'data/match_controller.dart';
+import 'data/sound.dart';
 import 'data/storage.dart';
 import 'data/tournament_store.dart';
 import 'ui/about_screen.dart';
@@ -25,6 +28,8 @@ Future<void> main() async {
     return 'Bildschirm: ${RouteLog.current} · Kopplung: $link';
   };
   await ErrorLog.init(appVersion: appVersion);
+  // Töne einmal vorladen (im Hintergrund, blockiert den Start nicht).
+  unawaited(Sound.preload());
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   applyStoredTheme();
   MatchController.onTournamentMatchDone = TournamentStore.onMatchDone;

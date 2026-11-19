@@ -9,10 +9,17 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.4.3';
+const appVersion = '2.5.0';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.5.0': [
+    (Icons.build_circle_rounded, 'Stabiler', 'Keine Abstürze im Grafiktreiber mehr, Töne ohne Hänger, Caller wird nicht mehr stummgeschaltet'),
+    (Icons.format_list_numbered_rounded, 'Ausbullen mit Reihenfolge', 'Alle Spieler der Reihe nach antippen – 1., 2., 3. …'),
+    (Icons.groups_rounded, 'Bis zu 8 Spieler', 'Auch auf der Anzeige als kompakte Kacheln'),
+    (Icons.my_location_rounded, 'Stell-Tipp', 'Kein Finish mehr möglich? Die App zeigt, worauf du stellst, z. B. 15 · Rest 32 (D16)'),
+    (Icons.emoji_events_rounded, 'Um Plätze weiterspielen', 'Ab 3 Spielern nach dem Sieg um Platz 2, 3 … weiterspielen'),
+  ],
   '2.4.3': [
     (Icons.flag_rounded, 'TV-Checkouts', 'Finish-Wege aus der Standard-Checkouttabelle, z. B. 121 = T20 · T11 · D14'),
     (Icons.skip_next_rounded, 'Als Nächstes', 'Die Anzeige zeigt im Turnier die nächste Paarung'),

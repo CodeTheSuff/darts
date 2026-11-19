@@ -224,8 +224,12 @@ class C {
     Color(0xFFF5C84C), // Gelb
     Color(0xFFB48CFF), // Lila
     Color(0xFFFF8AD0), // Pink
+    Color(0xFF3DD6C6), // Türkis
+    Color(0xFFFF9F43), // Orange
+    Color(0xFFB6E35A), // Limette
+    Color(0xFFE3E8F2), // Silber
   ];
-  static const playerColorNames = ['Blau', 'Gelb', 'Lila', 'Pink'];
+  static const playerColorNames = ['Blau', 'Gelb', 'Lila', 'Pink', 'Türkis', 'Orange', 'Limette', 'Silber'];
 
   /// Karten-Verlauf in der Akzentfarbe.
   static LinearGradient cardGradient([Color? tint, double strength = 0.10]) {

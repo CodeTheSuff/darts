@@ -59,6 +59,7 @@ class _GameScreenState extends State<GameScreen> {
     // Während Animationen keine Würfe/Undo von gekoppelten Geräten annehmen.
     ctl.inputLocked = v;
   }
+
   bool _showResult = false;
   int? _statsPlayer;
 
@@ -92,12 +93,17 @@ class _GameScreenState extends State<GameScreen> {
     _flashTimer?.cancel();
     _botTimer?.cancel();
     WakelockPlus.disable().catchError((_) {});
-    if (e.finished) ctl.commitStats();
+    if (ctl.decided) ctl.commitStats();
     super.dispose();
   }
 
   void _onChange() {
     if (!mounted) return;
+    final pd = _playOnDialog;
+    if (pd != null && !e.finished) {
+      _playOnDialog = null;
+      if (pd.mounted) Navigator.of(pd).pop(true);
+    }
     final g = e;
     final d = _soDialog;
     if (d != null && (g is! X01Game || g.singleOutLeg || !g.singleOutOffered || g.finished)) {
@@ -157,6 +163,45 @@ class _GameScreenState extends State<GameScreen> {
   bool get _botMayThrow =>
       mounted && ctl.botTurn && !_busy && _pause == null && _celebration == null && !_showResult && _soDialog == null;
 
+  // ---------------------------------------------------------------- Weiterspielen um Plätze
+
+  BuildContext? _playOnDialog;
+
+  /// Fragt nach einem Sieg (bzw. Platz), ob die übrigen um den nächsten Platz weiterspielen.
+  /// true = es wird weitergespielt (hier oder auf einem gekoppelten Gerät entschieden).
+  Future<bool> _askPlayOn(int place) async {
+    final g = e;
+    if (g is! X01Game || g.remaining < 2) return false;
+    final who = g.players[g.placed[place - 1]].name;
+    final yes = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) {
+        _playOnDialog = c;
+        return AlertDialog(
+          icon: Icon(Icons.emoji_events_rounded, color: C.gold, size: 40),
+          title: Text(place == 1 ? '$who gewinnt!' : '$who wird $place.'),
+          content: Text('Weiterspielen um Platz ${place + 1}? Die übrigen ${g.remaining} Spieler spielen das Leg '
+              'mit ihren Restpunkten zu Ende.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Beenden')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Weiterspielen')),
+          ],
+        );
+      },
+    );
+    _playOnDialog = null;
+    if (!mounted) return false;
+    final now = e;
+    // Hat ein anderes Gerät schon „Weiterspielen“ gewählt?
+    if (now is X01Game && !now.finished) return true;
+    if (yes == true) {
+      ctl.playOn();
+      return !e.finished;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------- Single Out
 
   BuildContext? _soDialog;
@@ -184,9 +229,11 @@ class _GameScreenState extends State<GameScreen> {
         return AlertDialog(
           icon: Icon(Icons.swap_horiz_rounded, color: C.accent, size: 36),
           title: const Text('Single Out erlauben?'),
-          content: Text('$name steht seit ${X01Game.stuckLimit} Aufnahmen auf $rest.\n\n'
-              'Für dieses Leg dürfen dann alle Spieler auch ohne Double finishen. '
-              'Ab dem nächsten Leg gilt wieder Double Out.'),
+          content: Text(
+            '$name steht seit ${X01Game.stuckLimit} Aufnahmen auf $rest.\n\n'
+            'Für dieses Leg dürfen dann alle Spieler auch ohne Double finishen. '
+            'Ab dem nächsten Leg gilt wieder Double Out.',
+          ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Nein, weiter Double')),
             FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Ja, Single Out')),
@@ -222,8 +269,10 @@ class _GameScreenState extends State<GameScreen> {
                 Icon(Icons.swap_horiz_rounded, color: on ? C.gold : C.muted, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(on ? 'Single Out in diesem Leg' : 'Single Out für dieses Leg erlauben',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: on ? C.gold : C.muted2)),
+                  child: Text(
+                    on ? 'Single Out in diesem Leg' : 'Single Out für dieses Leg erlauben',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: on ? C.gold : C.muted2),
+                  ),
                 ),
                 Switch(value: on, onChanged: _busy ? null : (v) => ctl.setSingleOut(v)),
               ],
@@ -316,7 +365,9 @@ class _GameScreenState extends State<GameScreen> {
       final kind = kindOf(ev.celebration!);
       String? label = ev.celebrationLabel;
       if (kind == CelebrationKind.legWon && e.legsToWin == null) label = 'GESCHAFFT!';
-      final skipLeg = kind == CelebrationKind.legWon && ev.gameOver;
+      final g = e;
+      final placing = g is X01Game && g.playingOn;
+      final skipLeg = kind == CelebrationKind.legWon && ev.gameOver && !placing;
       if (!skipLeg) {
         if (show) {
           await _celebrate(_CelebrationData(kind, p, ev.turnDarts, ev.celebrationValue, label: label));
@@ -331,7 +382,11 @@ class _GameScreenState extends State<GameScreen> {
       final res = e.results();
       final winner = res.first;
       final solo = e.n == 1;
-      if (show) {
+      final g = e;
+      final placing = g is X01Game && g.playingOn;
+      if (placing) {
+        // Platz beim Weiterspielen vergeben – keine zweite Sieger-Animation
+      } else if (show) {
         await _celebrate(
           _CelebrationData(
             CelebrationKind.match,
@@ -343,6 +398,18 @@ class _GameScreenState extends State<GameScreen> {
         );
       } else {
         Sound.play('win');
+      }
+      if (!mounted) return;
+      // Ab 3 Spielern: um den nächsten Platz weiterspielen?
+      if (ev.offerPlayOn != null && await _askPlayOn(ev.offerPlayOn!)) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _pause = null;
+          _showResult = false;
+        });
+        _scheduleBot();
+        return;
       }
       if (!mounted) return;
       setState(() {
@@ -692,64 +759,68 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _others(int shown) {
     final idx = [for (var k = 1; k < e.n; k++) (shown + k) % e.n];
-    return Row(
-      children: [
-        for (final i in idx)
-          Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: i == idx.last ? 0 : 8),
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              decoration: BoxDecoration(
-                gradient: C.cardGradient(_color(i), 0.07),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Color.alphaBlend(_color(i).withValues(alpha: 0.18), C.border)),
+    // Bis 3 Mitspieler nebeneinander, ab 4 als scrollbare Reihe mit fester Breite.
+    if (idx.length <= 3) {
+      return Row(
+        children: [for (final i in idx) Expanded(child: _otherCard(i, last: i == idx.last))],
+      );
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [for (final i in idx) SizedBox(width: 124, child: _otherCard(i, last: i == idx.last))],
+      ),
+    );
+  }
+
+  Widget _otherCard(int i, {required bool last}) {
+    return Container(
+      margin: EdgeInsets.only(right: last ? 0 : 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        gradient: C.cardGradient(_color(i), 0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Color.alphaBlend(_color(i).withValues(alpha: 0.18), C.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ctl.isBot(i)
+                  ? Icon(Icons.smart_toy_rounded, size: 12, color: _color(i))
+                  : Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(color: _color(i), shape: BoxShape.circle),
+                    ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  e.players[i].name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: C.muted2, fontWeight: FontWeight.w700),
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      ctl.isBot(i)
-                          ? Icon(Icons.smart_toy_rounded, size: 12, color: _color(i))
-                          : Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(color: _color(i), shape: BoxShape.circle),
-                            ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          e.players[i].name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: C.muted2, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
-                  ),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: _scoreText(e.mainValue(i), 30),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          e.legsToWin != null ? 'Letzte ${e.lastLine(i)}' : (e.subLine(i) ?? ''),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: C.muted),
-                        ),
-                      ),
-                      if (e.legsToWin != null) _progress(i, small: true),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            ],
           ),
-      ],
+          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _scoreText(e.mainValue(i), 30)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  e.legsToWin != null ? 'Letzte ${e.lastLine(i)}' : (e.subLine(i) ?? ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: C.muted),
+                ),
+              ),
+              if (e.legsToWin != null) _progress(i, small: true),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -826,7 +897,7 @@ class _GameScreenState extends State<GameScreen> {
       );
     } else {
       var h = _pause == null ? e.hint : null;
-      if (h != null && h.label == 'Checkout' && !Store.checkoutHint) h = null;
+      if (h != null && (h.label == 'Checkout' || h.label == 'Stellen') && !Store.checkoutHint) h = null;
       if (h == null) {
         bg = C.surface;
         fg = C.muted;

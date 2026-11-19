@@ -35,6 +35,10 @@ class ThrowEvent {
 
   /// Leg wurde mit Single Out ohne Double beendet.
   bool singleOutFinish = false;
+
+  /// Nach diesem Wurf steht ein Platz fest und es spielen noch mindestens zwei weiter:
+  /// Weiterspielen um den nächsten Platz anbieten (Wert = dieser Platz, z. B. 1 = Sieger).
+  int? offerPlayOn;
 }
 
 /// Ein Feld, das auf der Scheibe als Ziel hervorgehoben wird.
@@ -161,7 +165,7 @@ abstract class GameEngine {
 
   ThrowEvent apply(Dart d) {
     final ev = ThrowEvent(cur);
-    if (finished) return ev;
+    if (finished && !d.isControl) return ev;
     if (d.isControl) {
       ev.control = true;
       onControl(d);

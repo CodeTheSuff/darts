@@ -92,7 +92,7 @@ class MatchController extends ChangeNotifier {
   }
 
   ThrowEvent throwDart(Dart d) {
-    if (engine.finished) return ThrowEvent(engine.cur);
+    if (engine.finished && !d.isControl) return ThrowEvent(engine.cur);
     ErrorLog.crumb('Dart ${d.label} von ${players[engine.cur].name} (Dart ${darts.length + 1})');
     darts.add(d);
     final ev = engine.apply(d);
@@ -104,7 +104,7 @@ class MatchController extends ChangeNotifier {
 
   /// Host: Wurf eines gekoppelten Geräts.
   void throwDartExternal(Dart d) {
-    if (engine.finished || inputLocked || !isValidDart(d)) return;
+    if ((engine.finished && !d.isControl) || inputLocked || !isValidDart(d)) return;
     // Ist gerade ein Bot dran, gehört der Wurf nicht zu ihm (veralteter Stand beim Gast).
     if (botTurn && !d.isControl) return;
     final ev = throwDart(d);
@@ -116,7 +116,7 @@ class MatchController extends ChangeNotifier {
 
   /// Nur echte Felder bzw. bekannte Markierungen zulassen.
   static bool isValidDart(Dart d) {
-    if (d.isControl) return d.field == -1 && (d.mult == 0 || d.mult == 1);
+    if (d.isControl) return (d.field == -1 && (d.mult == 0 || d.mult == 1)) || (d.field == -2 && d.mult == 1);
     if (d.field == 0) return d.mult == 1;
     if (d.field == 25) return d.mult == 1 || d.mult == 2;
     return d.field >= 1 && d.field <= 20 && d.mult >= 1 && d.mult <= 3;
@@ -204,6 +204,16 @@ class MatchController extends ChangeNotifier {
     if (darts.isNotEmpty) darts.removeLast();
   }
 
+  /// Nach dem Sieg um den nächsten Platz weiterspielen (X01, mindestens zwei übrig).
+  void playOn() {
+    final e = engine;
+    if (e is! X01Game || !e.finished || e.remaining < 2) return;
+    throwDart(Dart.playOn);
+  }
+
+  /// Steht schon mindestens ein Platz fest? (Dann zählt das Match auch beim Verlassen.)
+  bool get decided => engine.finished || (engine is X01Game && (engine as X01Game).placed.isNotEmpty);
+
   /// Single Out für das laufende Leg an- oder ausschalten (nur X01 mit Double Out).
   void setSingleOut(bool on) {
     final e = engine;
@@ -250,7 +260,7 @@ class MatchController extends ChangeNotifier {
 
   /// Schreibt die Statistik eines beendeten Matches (einmalig).
   void commitStats() {
-    if (committed || !engine.finished) return;
+    if (committed || !decided) return;
     committed = true;
     if (!remote) Store.activeMatch = null;
     final results = engine.results();

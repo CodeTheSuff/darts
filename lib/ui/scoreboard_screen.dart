@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../data/caller.dart';
 import '../data/match_controller.dart';
 import '../data/storage.dart';
+import '../games/checkout.dart';
 import '../games/engine.dart';
 import '../games/x01.dart';
 import '../games/tournament.dart';
@@ -96,7 +98,16 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
 
   void _onEvent(ThrowEvent ev) {
     final e = _ctl?.engine;
-    if (e == null || !ev.turnEnded || !Store.celebrations) return;
+    if (e == null || ev.control || !ev.turnEnded) return;
+    // Caller-Ansage auch auf der Anzeige (wenn dort eingeschaltet)
+    if (e is X01Game) {
+      Caller.visit(ev.bust ? 0 : sumOf(ev.turnDarts), bust: ev.bust);
+      if (!e.finished) {
+        final rest = e.scores[e.cur];
+        if (findCheckout(rest, 3, doubleOut: e.doubleOutNow) != null) Caller.require(e.players[e.cur].name, rest);
+      }
+    }
+    if (!Store.celebrations) return;
     if (ev.celebration != null) {
       final kind = kindOf(ev.celebration!);
       if (!(kind == CelebrationKind.legWon && ev.gameOver)) {
@@ -293,7 +304,11 @@ class _MatchBoard extends StatelessWidget {
     final so = e is X01Game && e.singleOutLeg;
     final hint = e.finished ? null : e.hint;
     final winner = e.finished && e.n > 1 ? e.results().first.playerIndex : null;
-    final panels = [for (var i = 0; i < e.n; i++) _panel(i, winner, k)];
+    // Ab 5 Spielern kompakte Kacheln in zwei Reihen, bei 3–4 etwas kleiner.
+    final many = e.n > 4;
+    final pk = many ? k * 0.58 : (e.n > 2 ? k * 0.8 : k);
+    final panels = [for (var i = 0; i < e.n; i++) _panel(i, winner, pk)];
+    final half = (e.n + 1) ~/ 2;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(
@@ -319,12 +334,28 @@ class _MatchBoard extends StatelessWidget {
             const SizedBox(height: 8),
           ],
           Expanded(
-            child: landscape || e.n <= 1
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [for (final p in panels) Expanded(child: p)],
+            child: many
+                ? Column(
+                    children: [
+                      for (final row in [panels.sublist(0, half), panels.sublist(half)])
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final p in row) Expanded(child: p),
+                              // gleich breite Kacheln, auch wenn die untere Reihe kürzer ist
+                              for (var j = row.length; j < half; j++) const Expanded(child: SizedBox()),
+                            ],
+                          ),
+                        ),
+                    ],
                   )
-                : Column(children: [for (final p in panels) Expanded(child: p)]),
+                : landscape || e.n <= 1
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [for (final p in panels) Expanded(child: p)],
+                      )
+                    : Column(children: [for (final p in panels) Expanded(child: p)]),
           ),
           if (hint != null && Store.checkoutHint) ...[
             SizedBox(height: 8 * k),
@@ -352,8 +383,16 @@ class _MatchBoard extends StatelessWidget {
       child: parts.isEmpty
           ? FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(hint.text,
-                  style: TextStyle(fontSize: 40 * k, fontFamily: numFont, fontWeight: FontWeight.w800, color: C.muted2)),
+              child: Text.rich(
+                TextSpan(children: [
+                  if (hint.label != null)
+                    TextSpan(
+                        text: '${hint.label!.toUpperCase()}   ',
+                        style: TextStyle(color: col, letterSpacing: 3 * k, fontSize: 32 * k)),
+                  TextSpan(text: hint.text),
+                ]),
+                style: TextStyle(fontSize: 44 * k, fontFamily: numFont, fontWeight: FontWeight.w800, color: C.text),
+              ),
             )
           : Row(
               children: [
@@ -512,7 +551,9 @@ class _MatchBoard extends StatelessWidget {
     final e = engine;
     final active = i == e.cur && !e.finished;
     final won = winner == i;
-    final lost = winner != null && !won;
+    // Weiterspielen um Plätze: wer schon einen Platz hat, wird abgedunkelt und markiert.
+    final place = e is X01Game ? e.placeOf(i) : null;
+    final lost = (winner != null && !won) || (place != null && !e.finished);
     final lit = active || won;
     final col = Color(e.players[i].color);
     final edge = won ? C.gold : col;
@@ -559,6 +600,9 @@ class _MatchBoard extends StatelessWidget {
                       SizedBox(width: 12 * k),
                       if (active) _pill('AM WURF', col, k: k),
                       if (won) _pill('SIEGER', C.gold, icon: Icons.emoji_events_rounded, k: k),
+                      if (!won && place != null)
+                        _pill(place == 1 ? 'SIEGER' : 'PLATZ $place', C.gold,
+                            icon: place == 1 ? Icons.emoji_events_rounded : null, k: k),
                     ],
                   ),
                 ),

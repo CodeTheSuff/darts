@@ -369,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 2),
                 Text(m.short, style: TextStyle(color: C.muted, fontSize: 13)),
                 const SizedBox(height: 6),
-                Text(m.minPlayers > 1 ? '${m.minPlayers}–4 Spieler' : '1–4 Spieler',
+                Text(m.minPlayers > 1 ? '${m.minPlayers}–8 Spieler' : '1–8 Spieler',
                     style: TextStyle(color: col, fontSize: 11, fontWeight: FontWeight.w800)),
               ],
             ),

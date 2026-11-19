@@ -14,6 +14,9 @@ import 'game_screen.dart';
 import 'link_coordinator.dart';
 import 'theme.dart';
 
+/// Höchstzahl Spieler in normalen Spielen.
+const maxPlayers = 8;
+
 class _Slot {
   _Slot(String name, this.color)
       : ctl = TextEditingController(text: name),
@@ -110,7 +113,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Sorgt dafür, dass jede Farbe nur einmal vorkommt und Bot-Regeln gelten.
   void _fixColors() {
     if (_hasBot && _humans != 1) _slots.removeWhere((s) => s.isBot);
-    if (_slots.length > 4) _slots.removeRange(4, _slots.length);
+    if (_slots.length > maxPlayers) _slots.removeRange(maxPlayers, _slots.length);
     final used = <Color>{};
     for (final s in _slots) {
       if (!C.players.contains(s.color) || used.contains(s.color)) {
@@ -134,7 +137,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   void _addPlayer([String name = '']) {
-    if (_slots.length >= 4 || _hasBot) return;
+    if (_slots.length >= maxPlayers || _hasBot) return;
     final free = C.players.firstWhere((c) => !_slots.any((s) => s.color == c));
     setState(() => _slots.add(_Slot(name, free)));
   }
@@ -176,7 +179,7 @@ class _SetupScreenState extends State<SetupScreen> {
       );
       return;
     }
-    final players = [
+    var players = [
       for (var i = 0; i < _slots.length; i++)
         _slots[i].isBot
             ? GamePlayer(_slots[i].botId, names[i], _slots[i].color.toARGB32())
@@ -200,9 +203,11 @@ class _SetupScreenState extends State<SetupScreen> {
       if (_hasBot) {
         start = Random().nextInt(players.length);
       } else {
-        final s = await showBullOff(context, players);
-        if (s == null || !mounted) return;
-        start = s;
+        // Ausbullen legt die komplette Wurfreihenfolge fest (1., 2., 3. …).
+        final order = await showBullOffOrder(context, players);
+        if (order == null || !mounted) return;
+        players = [for (final i in order) players[i]];
+        start = 0;
       }
     }
     if (!mounted) return;
@@ -219,7 +224,7 @@ class _SetupScreenState extends State<SetupScreen> {
     final mode = widget.mode;
     final inRoster = {for (var i = 0; i < _slots.length; i++) _nameOf(i).toLowerCase()};
     final saved = Store.profiles.where((p) => !inRoster.contains(p.name.toLowerCase())).toList();
-    final canAdd = _slots.length < 4 && !_hasBot;
+    final canAdd = _slots.length < maxPlayers && !_hasBot;
     final canBot = _isX01 && _humans == 1 && !_hasBot;
     final opts = _visibleOptions();
 
@@ -437,8 +442,13 @@ class _SetupScreenState extends State<SetupScreen> {
               children: [
                 const SizedBox(width: 4),
                 Text('Farbe', style: TextStyle(color: C.muted, fontSize: 12)),
-                const SizedBox(width: 12),
-                for (var k = 0; k < C.players.length; k++) _swatch(i, k),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [for (var k = 0; k < C.players.length; k++) _swatch(i, k)]),
+                  ),
+                ),
               ],
             ),
         ],

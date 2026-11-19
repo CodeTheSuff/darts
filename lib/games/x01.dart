@@ -149,9 +149,31 @@ class X01Game extends GameEngine {
   /// Gilt gerade Double Out?
   bool get doubleOutNow => doubleOut && !singleOutLeg;
 
+  /// Feste Plätze in Reihenfolge (Sieger zuerst, dann wer beim Weiterspielen auscheckt).
+  final List<int> placed = [];
+
+  /// Nach dem Sieg wird um die weiteren Plätze weitergespielt.
+  bool playingOn = false;
+
+  /// Spieler, die noch um einen Platz spielen.
+  int get remaining => n - placed.length;
+
+  @override
+  bool isOut(int i) => playingOn && placed.contains(i);
+
+  /// Platz eines Spielers (1 = Sieger) oder null, wenn noch offen.
+  int? placeOf(int i) {
+    final k = placed.indexOf(i);
+    return k < 0 ? null : k + 1;
+  }
+
   @override
   void onControl(Dart d) {
-    if (!doubleOut) return;
+    if (d.field == -2) {
+      _playOn();
+      return;
+    }
+    if (!doubleOut || finished) return;
     singleOutLeg = d.mult == 1;
     if (singleOutLeg) singleOutOffered = true;
   }
@@ -211,6 +233,25 @@ class X01Game extends GameEngine {
     s.points += d.value;
     if (first9) s.f9Points += d.value;
 
+    if (rest == 0 && playingOn) {
+      if (attempt) s.coHits++;
+      _recordTurn(p, turnStart);
+      scores[p] = 0;
+      placed.add(p);
+      ev.celebration = Celebration.legWon;
+      ev.celebrationValue = turnStart;
+      ev.celebrationLabel = 'PLATZ ${placed.length}';
+      ev.message = '${players[p].name} wird ${placed.length}.';
+      if (remaining == 1) {
+        // Der Letzte bekommt den letzten Platz.
+        placed.add([for (var i = 0; i < n; i++) i].firstWhere((i) => !placed.contains(i)));
+        finishGame();
+      } else {
+        finishGame();
+        ev.offerPlayOn = placed.length;
+      }
+      return;
+    }
     if (rest == 0) {
       if (attempt) s.coHits++;
       final finish = turnStart;
@@ -234,8 +275,10 @@ class X01Game extends GameEngine {
       }
       if (useSets ? sets[p] >= setsTarget : legs[p] >= legsTarget) {
         winner = p;
+        placed.add(p);
         _closeMatch();
         finishGame();
+        if (remaining >= 2) ev.offerPlayOn = 1;
         return;
       }
       if (setWon) {
@@ -291,6 +334,22 @@ class X01Game extends GameEngine {
       ev.celebration = c;
       ev.celebrationValue = sum;
     }
+  }
+
+  /// Nach einem Sieg mit den übrigen Spielern weiterspielen (Leg läuft mit ihren Restpunkten weiter).
+  void _playOn() {
+    if (!finished || remaining < 2) return;
+    finished = false;
+    playingOn = true;
+    turn = [];
+    // Der nächste noch spielende Spieler nach dem zuletzt Platzierten ist dran.
+    var c = placed.last;
+    for (var i = 0; i < n; i++) {
+      c = (c + 1) % n;
+      if (!placed.contains(c)) break;
+    }
+    cur = c;
+    onTurnStart();
   }
 
   void _closeMatch() {
@@ -351,6 +410,11 @@ class X01Game extends GameEngine {
     final co = findCheckout(rest, left, doubleOut: doubleOutNow, avoidDoubles: singleOutLeg);
     if (co != null) return Hint('Checkout', co.join(' · '), strong: true);
     if (rest > (doubleOutNow ? 170 : 180)) return const Hint(null, 'Noch kein Finish möglich');
+    // Kein Finish mehr mit den restlichen Darts: den besten Stellwurf vorschlagen.
+    if (doubleOutNow) {
+      final st = setupShot(rest);
+      if (st != null) return Hint('Stellen', st.text);
+    }
     return Hint(null, 'Kein Finish mit $left ${left == 1 ? 'Dart' : 'Darts'}');
   }
 
@@ -365,7 +429,9 @@ class X01Game extends GameEngine {
               : '${legs[i]} ${legs[i] == 1 ? 'Leg' : 'Legs'}',
           detail: '${useSets ? '${legsTotal[i]} Legs · ' : ''}'
               'Ø ${fmt1(stats[i].average)} · Höchste ${stats[i].highestTurn} · 180er ${stats[i].c180}',
-          metric: sets[i] * 1000000 + legs[i] * 1000 - scores[i],
+          metric: placed.contains(i)
+              ? 1000000000 - placed.indexOf(i)
+              : sets[i] * 1000000 + legs[i] * 1000 - scores[i],
         )
     ];
     return rankBy(list, (r) => r.metric!);

@@ -38,6 +38,41 @@ final List<_Seg> _noDouble = [
   for (var i = 20; i >= 1; i--) _Seg('T$i', i * 3),
 ];
 
+/// Beliebte Rest-Doubles für den Stellwurf, beste zuerst (D16, D20, D8 …).
+const preferredLeaves = [32, 40, 16, 36, 24, 20, 8, 12, 28, 18, 10, 4, 2];
+
+String _doubleName(int leave) => leave == 50 ? 'Bull' : 'D${leave ~/ 2}';
+
+/// Stellwurf, wenn mit den restlichen Darts kein Finish mehr geht (nur Double Out):
+/// ein Wurf, der einen guten Rest übrig lässt – z. B. 47 → „15“ (Rest 32, D16).
+({String aim, int leave, String text})? setupShot(int rest) {
+  if (rest < 3) return null;
+  // 1. Ein Single auf ein beliebtes Double
+  for (final leave in preferredLeaves) {
+    final v = rest - leave;
+    if (v >= 1 && v <= 20) return (aim: '$v', leave: leave, text: '$v · Rest $leave (${_doubleName(leave)})');
+  }
+  // 1b. Die 25
+  for (final leave in preferredLeaves) {
+    if (rest - leave == 25) return (aim: '25', leave: leave, text: '25 · Rest $leave (${_doubleName(leave)})');
+  }
+  // 2. Ein Triple auf ein beliebtes Double
+  for (final leave in preferredLeaves) {
+    final v = rest - leave;
+    if (v > 0 && v % 3 == 0 && v ~/ 3 <= 20) {
+      return (aim: 'T${v ~/ 3}', leave: leave, text: 'T${v ~/ 3} · Rest $leave (${_doubleName(leave)})');
+    }
+  }
+  // 3. Höhere Reste: T20 bzw. T19, ohne auf einer Bogey-Zahl zu landen
+  for (final (aim, v) in const [('T20', 60), ('T19', 57), ('T18', 54)]) {
+    final leave = rest - v;
+    if (leave >= 2 && !bogeyNumbers.contains(leave) && leave <= 170) {
+      return (aim: aim, leave: leave, text: '$aim · Rest $leave');
+    }
+  }
+  return null;
+}
+
 /// Unmögliche Checkouts (Double Out) zwischen 2 und 170.
 const bogeyNumbers = {159, 162, 163, 165, 166, 168, 169};
 
