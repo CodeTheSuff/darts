@@ -95,7 +95,7 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Starten'));
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
-      expect(find.text('Ziel: 1'), findsOneWidget);
+      expect(find.text('ZIEL'), findsOneWidget); // Ziel steht nur noch im Hinweisbalken
       expect(find.byWidgetPredicate((w) => w is Key3 && w.semantics == '7'), findsNothing);
       for (final label in ['1, Single · +1', 'D1, Double · +2', 'T1, Triple · +3']) {
         await tester.tap(find.byWidgetPredicate((w) => w is Key3 && w.semantics == label));

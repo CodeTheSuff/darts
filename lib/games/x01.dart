@@ -365,6 +365,8 @@ class X01Game extends GameEngine {
 
   @override
   String get subtitle {
+    // Weiterspielen um Plätze: das letzte Leg läuft weiter, kein neues Leg.
+    if (playingOn && !finished) return '${players[placed.first].name} hat gewonnen · um Platz ${placed.length + 1}';
     if (useSets) {
       final setNo = sets.fold(0, (a, b) => a + b) + (finished ? 0 : 1);
       final legNo = legs.fold(0, (a, b) => a + b) + (finished ? 0 : 1);

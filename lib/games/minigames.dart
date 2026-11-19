@@ -319,7 +319,7 @@ class ShanghaiGame extends GameEngine {
         QuickButton(target, 1, '$target', 'Single · +$target'),
         QuickButton(target, 2, 'D$target', 'Double · +${target * 2}'),
         QuickButton(target, 3, 'T$target', 'Triple · +${target * 3}'),
-      ], title: 'Ziel: $target');
+      ]);
 
   @override
   List<PlayerResult> results() {

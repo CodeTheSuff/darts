@@ -243,7 +243,7 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Text(mode.rules, style: TextStyle(color: C.muted2, height: 1.4)),
           ),
         ),
-      SectionTitle('Spieler', trailing: _hasBot ? 'Du gegen Bot' : '${_slots.length} / 4'),
+      SectionTitle('Spieler', trailing: _hasBot ? 'Du gegen Bot' : '${_slots.length} / $maxPlayers'),
       for (var i = 0; i < _slots.length; i++) _playerCard(i),
       if (canAdd || canBot)
         Padding(

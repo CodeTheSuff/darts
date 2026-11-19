@@ -129,12 +129,12 @@ class AroundTheClockGame extends GameEngine {
     final step = progress[cur];
     if (step == bullStep) {
       if (variant == 'doubles') {
-        return const InputSpec.buttons([QuickButton(25, 2, 'Bull', 'Getroffen')], title: 'Ziel: Bullseye');
+        return const InputSpec.buttons([QuickButton(25, 2, 'Bull', 'Getroffen')]);
       }
       return const InputSpec.buttons([
         QuickButton(25, 1, '25', 'Single Bull'),
         QuickButton(25, 2, 'Bull', 'Bullseye'),
-      ], title: 'Ziel: Bull');
+      ]);
     }
     final n = step + 1;
     return switch (variant) {
@@ -142,10 +142,10 @@ class AroundTheClockGame extends GameEngine {
           QuickButton(n, 1, '$n', 'Single · +1'),
           QuickButton(n, 2, 'D$n', 'Double · +2'),
           QuickButton(n, 3, 'T$n', 'Triple · +3'),
-        ], title: 'Ziel: $n'),
-      'doubles' => InputSpec.buttons([QuickButton(n, 2, 'D$n', 'Getroffen')], title: 'Ziel: Double $n'),
-      'triples' => InputSpec.buttons([QuickButton(n, 3, 'T$n', 'Getroffen')], title: 'Ziel: Triple $n'),
-      _ => InputSpec.buttons([QuickButton(n, 1, '$n', 'Getroffen')], title: 'Ziel: $n'),
+        ]),
+      'doubles' => InputSpec.buttons([QuickButton(n, 2, 'D$n', 'Getroffen')]),
+      'triples' => InputSpec.buttons([QuickButton(n, 3, 'T$n', 'Getroffen')]),
+      _ => InputSpec.buttons([QuickButton(n, 1, '$n', 'Getroffen')]),
     };
   }
 
@@ -251,9 +251,8 @@ class Bobs27Game extends GameEngine {
 
   @override
   InputSpec get input => round == 21
-      ? const InputSpec.buttons([QuickButton(25, 2, 'Bull', 'Treffer · +50')], title: 'Ziel: Bullseye')
-      : InputSpec.buttons([QuickButton(round, 2, 'D$round', 'Treffer · +${round * 2}')],
-          title: 'Ziel: Double $round');
+      ? const InputSpec.buttons([QuickButton(25, 2, 'Bull', 'Treffer · +50')])
+      : InputSpec.buttons([QuickButton(round, 2, 'D$round', 'Treffer · +${round * 2}')]);
 
   @override
   List<PlayerResult> results() {
@@ -656,14 +655,14 @@ class HalveItGame extends GameEngine {
         return const InputSpec.buttons([
           QuickButton(25, 1, '25', '+25'),
           QuickButton(25, 2, 'Bull', '+50'),
-        ], title: 'Ziel: Bull');
+        ]);
       default:
         final n = int.parse(step);
         return InputSpec.buttons([
           QuickButton(n, 1, '$n', '+$n'),
           QuickButton(n, 2, 'D$n', '+${n * 2}'),
           QuickButton(n, 3, 'T$n', '+${n * 3}'),
-        ], title: 'Ziel: $n');
+        ]);
     }
   }
 
