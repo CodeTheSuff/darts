@@ -680,8 +680,10 @@ class Link extends ChangeNotifier {
   bool _quick = false;
   bool _includeSelf = false;
 
-  /// Gleichzeitig abgefragte Adressen bei der Netzsuche (mehr überfordert die Nachbar-Tabelle von Android/Router).
-  static const scanBatch = 512;
+  /// Netzsuche: so viele neue Adressen je [scanTick] (≈ 240 pro Sekunde).
+  /// Gemessen: Android hält max. 1024 Nachbarn, jede gefragte Adresse bleibt ~3 s drin.
+  static const scanBatch = 120;
+  static const scanTick = Duration(milliseconds: 500);
 
   /// Pause zwischen zwei kompletten Durchläufen.
   static const sweepPause = Duration(seconds: 30);
@@ -721,6 +723,28 @@ class Link extends ChangeNotifier {
     // Gespeicherte Adressen werden hier bewusst NICHT überschrieben: Suchmeldungen sind
     // nicht beglaubigt. Erst eine echte, ausgewiesene Verbindung merkt sich die Adresse.
     rooms.value = rooms.value.where((r) => r.device != room.device).toList()..add(room);
+  }
+
+  /// Fester Anfang der eigenen Netzadresse (z. B. "10.192." bei /19, "192.168.0." bei /24).
+  static String networkPrefix(String own, int prefix) {
+    final p = own.split('.');
+    if (p.length != 4) return '';
+    final fixed = prefix >= 24 ? 3 : (prefix >= 16 ? 2 : 1);
+    return '${p.take(fixed).join('.')}.';
+  }
+
+  /// Kurzform einer Adresse ohne den festen Netzanfang (z. B. "63.187").
+  static String shortAddress(String address, String prefix) =>
+      prefix.isNotEmpty && address.startsWith(prefix) ? address.substring(prefix.length) : address;
+
+  /// Ergänzt eine Kurzeingabe wie "63.187" mit dem eigenen Netzanfang zur vollen Adresse.
+  static String completeAddress(String input, String prefix) {
+    final t = input.trim();
+    if (t.split('.').length >= 4 || prefix.isEmpty) return t;
+    final need = 4 - t.split('.').length;
+    final pre = prefix.split('.').where((x) => x.isNotEmpty).toList();
+    if (pre.length < need) return t;
+    return '${pre.take(need).join('.')}.$t';
   }
 
   /// Höchstens so viele Adressen werden pro Suchlauf abgefragt.
@@ -797,17 +821,27 @@ class Link extends ChangeNotifier {
   Future<void> _scanNetwork({bool includeSelf = false}) async {
     if (_scanning || _scanTimer == null) return;
     _scanning = true;
-    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 800);
+    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1200);
+    final pending = <Future<void>>[];
     try {
       final known = {for (final h in Store.knownHosts) h.address};
       final targets = (await scanTargets()).where((a) => !known.contains(a)).toList();
       scanProgress.value = (0, targets.length);
+      // Gleichmäßiges Tempo statt großer Schübe: Android merkt sich jede gefragte Adresse
+      // ~3 s in der Nachbar-Tabelle (max. 1024 Einträge). Zu viele auf einmal → Tabelle voll,
+      // und die Antwort des echten Geräts geht verloren.
       for (var i = 0; i < targets.length && _scanTimer != null; i += scanBatch) {
-        await Future.wait([
-          for (final t in targets.skip(i).take(scanBatch)) _probe(client, t, includeSelf),
-        ]);
+        final tick = Stopwatch()..start();
+        for (final t in targets.skip(i).take(scanBatch)) {
+          final f = _probe(client, t, includeSelf);
+          pending.add(f);
+          f.whenComplete(() => pending.remove(f));
+        }
         scanProgress.value = (min(i + scanBatch, targets.length), targets.length);
+        final rest = scanTick - tick.elapsed;
+        if (rest > Duration.zero) await Future<void>.delayed(rest);
       }
+      await Future.wait(List.of(pending));
     } finally {
       client.close(force: true);
       _scanning = false;

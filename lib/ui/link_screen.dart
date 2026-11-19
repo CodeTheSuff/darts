@@ -25,6 +25,7 @@ class _LinkScreenState extends State<LinkScreen> {
     super.initState();
     l.addListener(_onLink);
     if (l.role == LinkRole.none) l.startDiscovery();
+    _loadPrefix();
   }
 
   @override
@@ -249,8 +250,18 @@ class _LinkScreenState extends State<LinkScreen> {
     );
   }
 
+  /// Fester Netzanfang dieses Geräts (für Kurzadressen).
+  String _prefix = '';
+
+  Future<void> _loadPrefix() async {
+    final nets = await Link.networks();
+    if (nets.isNotEmpty && mounted) setState(() => _prefix = Link.networkPrefix(nets.first.$1, nets.first.$2));
+  }
+
   Future<void> _manual() async {
-    final addr = TextEditingController();
+    if (_prefix.isEmpty) await _loadPrefix();
+    if (!mounted) return;
+    final addr = TextEditingController(text: _prefix);
     final code = TextEditingController();
     var viewer = false;
     final ok = await showDialog<bool>(
@@ -263,7 +274,12 @@ class _LinkScreenState extends State<LinkScreen> {
             TextField(
               controller: addr,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Adresse', hintText: 'z. B. 192.168.0.23'),
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Adresse',
+                hintText: _prefix.isEmpty ? 'z. B. 192.168.0.23' : '${_prefix}63.187',
+                helperText: _prefix.isEmpty ? null : 'Der Anfang „$_prefix“ ist schon eingetragen – nur den Rest tippen',
+              ),
             ),
             TextField(
               controller: code,
@@ -288,7 +304,7 @@ class _LinkScreenState extends State<LinkScreen> {
       ),
     );
     if (ok != true) return;
-    final a = addr.text.trim();
+    final a = Link.completeAddress(addr.text, _prefix);
     var host = a;
     var port = Link.defaultPort;
     if (a.contains(':')) {
@@ -492,6 +508,14 @@ class _LinkScreenState extends State<LinkScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: C.muted, fontSize: 13),
             ),
+            if (_prefix.isNotEmpty && l.addresses.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Am anderen Gerät reicht:', style: TextStyle(color: C.muted, fontSize: 12)),
+              Text(
+                Link.shortAddress(l.addresses.first, _prefix),
+                style: const TextStyle(fontFamily: numFont, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 2),
+              ),
+            ],
             const SizedBox(height: 4),
             Text(
               'Der Code bleibt immer gleich (änderbar unter Einstellungen → Daten).',

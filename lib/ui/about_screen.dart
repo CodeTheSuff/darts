@@ -9,10 +9,14 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.4.1';
+const appVersion = '2.4.2';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.4.2': [
+    (Icons.wifi_find_rounded, 'Gerätesuche repariert', 'Sucht in großen WLANs gleichmäßig statt alles auf einmal – findet die anderen Geräte jetzt zuverlässig'),
+    (Icons.keyboard_rounded, 'Einfacher verbinden', 'Kurzadresse am Host, der Netzanfang ist beim Eintippen schon ausgefüllt'),
+  ],
   '2.4.1': [
     (Icons.key_rounded, 'Kopplung mit Schlüssel', 'Gekoppelte Geräte weisen sich gegenseitig aus – Fremde können sich nicht als dein Gerät ausgeben'),
     (Icons.tv_rounded, 'Mitspielen oder Anzeige', 'Klare Auswahl beim Verbinden und jederzeit umschaltbar'),
