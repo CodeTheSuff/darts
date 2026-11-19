@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../data/caller.dart';
 import '../data/match_controller.dart';
+import '../data/match_report.dart';
 import '../data/storage.dart';
 import '../games/checkout.dart';
 import '../games/engine.dart';
@@ -16,6 +17,8 @@ import '../models/dart.dart';
 import '../net/link.dart';
 import 'celebration.dart';
 import 'link_coordinator.dart';
+import 'logo.dart';
+import 'stats_table.dart';
 import 'theme.dart';
 import 'tournament_screens.dart';
 
@@ -39,7 +42,18 @@ class _Show {
   final String? label;
 }
 
-class _ScoreboardScreenState extends State<ScoreboardScreen> {
+class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerProviderStateMixin {
+  /// Leg-Statistik bis zum ersten Dart des nächsten Legs, Match-Statistik bis zum nächsten Match.
+  LegReport? _boardLeg;
+  bool _boardMatch = false;
+
+  /// Sanftes Pulsieren des Logos im Wartebildschirm.
+  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
+    ..repeat(reverse: true);
+
+  MatchReport? _report(MatchController c) =>
+      MatchReport.build(config: c.config, players: c.players, startIndex: c.startIndex, seed: c.seed, darts: c.darts);
+
   MatchController? _ctl;
   StreamSubscription<ThrowEvent>? _sub;
   final _queue = <_Show>[];
@@ -58,6 +72,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
   @override
   void dispose() {
     LinkCoordinator.viewerState.removeListener(_onState);
+    _pulse.dispose();
     _sub?.cancel();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -76,9 +91,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
       final cur = _ctl;
       if (cur != null && cur.matchId == j['mid']) {
         try {
-          cur.applyRemote([
-            for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map)),
-          ]);
+          cur.applyRemote([for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))]);
         } catch (_) {}
       } else {
         _setCtl(MatchController.fromJson(j));
@@ -93,12 +106,32 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     _queue.clear();
     _show = null;
     _ctl = c;
+    _boardLeg = null;
+    // Schon beendetes Match (z. B. Anzeige später verbunden): gleich die Statistik
+    _boardMatch = c != null && c.engine.finished && c.engine is X01Game;
     if (c != null) _sub = c.externalEvents.listen(_onEvent);
   }
 
   void _onEvent(ThrowEvent ev) {
     final e = _ctl?.engine;
-    if (e == null || ev.control || !ev.turnEnded) return;
+    if (e == null || ev.control) return;
+    // Der erste Dart des nächsten Legs (bzw. beim Weiterspielen) schließt die Statistik.
+    if (_boardLeg != null || _boardMatch) {
+      _boardLeg = null;
+      _boardMatch = false;
+      if (mounted) setState(() {});
+    }
+    if (!ev.turnEnded) return;
+    if (e is X01Game) {
+      final kind = ev.celebration == null ? null : kindOf(ev.celebration!);
+      final legOver = kind == CelebrationKind.legWon || kind == CelebrationKind.highFinish;
+      if (ev.gameOver) {
+        _boardMatch = true;
+      } else if (legOver) {
+        _boardLeg = _report(_ctl!)?.lastFinishedLeg;
+      }
+      if (mounted) setState(() {});
+    }
     // Caller-Ansage auch auf der Anzeige (wenn dort eingeschaltet)
     if (e is X01Game) {
       Caller.visit(ev.bust ? 0 : sumOf(ev.turnDarts), bust: ev.bust);
@@ -118,8 +151,15 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     }
     if (ev.gameOver) {
       final w = e.results().first.playerIndex;
-      _queue.add(_Show(CelebrationKind.match, w, w == ev.playerIndex ? ev.turnDarts : const [], null,
-          e.n == 1 ? 'GESCHAFFT' : (e.legsToWin != null ? 'MATCH GEWONNEN' : 'SIEG')));
+      _queue.add(
+        _Show(
+          CelebrationKind.match,
+          w,
+          w == ev.playerIndex ? ev.turnDarts : const [],
+          null,
+          e.n == 1 ? 'GESCHAFFT' : (e.legsToWin != null ? 'MATCH GEWONNEN' : 'SIEG'),
+        ),
+      );
     }
     _next();
   }
@@ -165,7 +205,10 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     final next = t == null ? null : nextMatchLabel(t, exceptMatch: c?.tournamentMatchId);
     Widget body;
     if (c != null) {
-      body = _MatchBoard(engine: c.engine, next: next);
+      final r = (_boardLeg != null || _boardMatch) ? _report(c) : null;
+      body = r != null
+          ? _BoardStats(engine: c.engine, report: r, leg: _boardMatch ? null : _boardLeg)
+          : _MatchBoard(engine: c.engine, next: next);
     } else if (t != null) {
       body = _TournamentBoard(t: t, next: next);
     } else {
@@ -225,27 +268,113 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     );
   }
 
-  Widget _waiting() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tv_rounded, size: 64, color: C.accent),
-            const SizedBox(height: 14),
-            const Text('Scoreboard', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            AnimatedBuilder(
-              animation: Link.I,
-              builder: (_, _) => Text(
-                Link.I.isConnected
-                    ? 'Verbunden mit ${Link.I.hostName ?? 'Host'} – warte auf ein Spiel …'
-                    : Link.I.status,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: C.muted, fontSize: 16),
+  /// Wartebildschirm: großes, pulsierendes Logo, Status der Verbindung.
+  Widget _waiting() => LayoutBuilder(
+    builder: (context, box) {
+      final k = (min(box.maxWidth, box.maxHeight) / 680).clamp(0.6, 1.7);
+      final connected = Link.I.isConnected;
+      final statusColor = connected ? C.dbl : const Color(0xFFFFB347);
+      return Stack(
+        children: [
+          // Blauer Verlauf wie im Logo mit Lichtschein
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.35),
+                  radius: 1.1,
+                  colors: [
+                    const Color(0xFF1F6FE5).withValues(alpha: 0.38),
+                    const Color(0xFF0A2A6B).withValues(alpha: 0.25),
+                    C.bg,
+                  ],
+                  stops: const [0, 0.45, 1],
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          Center(
+            child: Padding(
+              padding: EdgeInsets.all(24 * k),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedBuilder(
+                    animation: _pulse,
+                    builder: (_, child) {
+                      final t = Curves.easeInOut.transform(_pulse.value);
+                      return Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(60 * k),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF39A6FF).withValues(alpha: 0.25 + 0.25 * t),
+                              blurRadius: 40 * k + 30 * k * t,
+                              spreadRadius: 4 * k * t,
+                            ),
+                          ],
+                        ),
+                        child: Transform.scale(scale: 1 + 0.035 * t, child: child),
+                      );
+                    },
+                    child: DartsLogo(size: 230 * k, radius: 60 * k),
+                  ),
+                  SizedBox(height: 40 * k),
+                  Text(
+                    'Warte auf Spielstart …',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 52 * k, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                  ),
+                  SizedBox(height: 16 * k),
+                  AnimatedBuilder(
+                    animation: Link.I,
+                    builder: (_, _) => Container(
+                      padding: EdgeInsets.symmetric(horizontal: 22 * k, vertical: 10 * k),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 14 * k,
+                            height: 14 * k,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [BoxShadow(color: statusColor.withValues(alpha: 0.7), blurRadius: 10 * k)],
+                            ),
+                          ),
+                          SizedBox(width: 12 * k),
+                          Flexible(
+                            child: Text(
+                              Link.I.isConnected
+                                  ? 'Verbunden mit ${Link.I.hostName ?? 'Host'}'
+                                  : (Link.I.status.isEmpty ? 'Nicht verbunden' : Link.I.status),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w700, color: statusColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 48 * k),
+                  Text(
+                    'Starte am Handy ein Spiel oder Turnier',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20 * k, color: C.muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
+    },
+  );
 }
 
 /// „Als Nächstes“ im Turnier: das nächste spielbare Match (ohne das gerade laufende).
@@ -261,28 +390,119 @@ String? nextMatchLabel(Tournament t, {String? exceptMatch}) {
 
 /// Leiste „Als Nächstes“ oben auf der Anzeige.
 Widget nextUpBar(String text, double k) => Container(
-      margin: EdgeInsets.only(top: 6 * k),
-      padding: EdgeInsets.symmetric(horizontal: 16 * k, vertical: 6 * k),
-      decoration: BoxDecoration(
-        color: C.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: C.accent.withValues(alpha: 0.5)),
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+  margin: EdgeInsets.only(top: 6 * k),
+  padding: EdgeInsets.symmetric(horizontal: 16 * k, vertical: 6 * k),
+  decoration: BoxDecoration(
+    color: C.accent.withValues(alpha: 0.14),
+    borderRadius: BorderRadius.circular(99),
+    border: Border.all(color: C.accent.withValues(alpha: 0.5)),
+  ),
+  child: FittedBox(
+    fit: BoxFit.scaleDown,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.skip_next_rounded, color: C.accent, size: 26 * k),
+        SizedBox(width: 8 * k),
+        Text(
+          'ALS NÄCHSTES',
+          style: TextStyle(fontSize: 16 * k, fontWeight: FontWeight.w800, letterSpacing: 2, color: C.accent),
+        ),
+        SizedBox(width: 14 * k),
+        Text(
+          text,
+          style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w800),
+        ),
+      ],
+    ),
+  ),
+);
+
+/// Leg- bzw. Match-Statistik groß auf der Anzeige.
+class _BoardStats extends StatelessWidget {
+  const _BoardStats({required this.engine, required this.report, this.leg});
+  final GameEngine engine;
+  final MatchReport report;
+
+  /// null = Match-Statistik
+  final LegReport? leg;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final k = (min(box.maxWidth, box.maxHeight) / 560).clamp(0.8, 1.8);
+      final l = leg;
+      final String eyebrow;
+      final String title;
+      final Color color;
+      if (l != null) {
+        final w = l.winner!;
+        eyebrow = 'LEG ${l.number} BEENDET';
+        title = '${engine.players[w].name} checkt ${l.players[w].finish} mit ${l.players[w].darts} Darts';
+        color = Color(engine.players[w].color);
+      } else {
+        final w = engine.results().first.playerIndex;
+        eyebrow = 'MATCHSTATISTIK';
+        final score = engine.n == 2 && engine.legsToWin != null
+            ? '   ${engine.legsOf(w)} : ${engine.legsOf(1 - w)}'
+            : '';
+        title = '${engine.players[w].name} gewinnt$score';
+        color = C.gold;
+      }
+      return Padding(
+        padding: EdgeInsets.fromLTRB(24 * k, 16 * k, 24 * k, 16 * k),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(Icons.skip_next_rounded, color: C.accent, size: 26 * k),
-            SizedBox(width: 8 * k),
-            Text('ALS NÄCHSTES',
-                style: TextStyle(fontSize: 16 * k, fontWeight: FontWeight.w800, letterSpacing: 2, color: C.accent)),
-            SizedBox(width: 14 * k),
-            Text(text, style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w800)),
+            Text(
+              eyebrow,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18 * k, fontWeight: FontWeight.w800, letterSpacing: 3, color: color),
+            ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                style: TextStyle(fontSize: 38 * k, fontWeight: FontWeight.w800),
+              ),
+            ),
+            SizedBox(height: 14 * k),
+            Expanded(
+              // Immer komplett sichtbar: bei vielen Zeilen/Spielern wird verkleinert statt gescrollt
+              // (an der Anzeige tippt niemand).
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: box.maxWidth - 48 * k,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      StatsTable(
+                        players: engine.players,
+                        rows: l != null ? legRows(l) : matchRows(report),
+                        k: k * (engine.n > 4 ? 0.8 : 1.05),
+                      ),
+                      if (l == null && report.legs.length > 1) ...[
+                        SizedBox(height: 16 * k),
+                        LegList(report: report, k: k),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Text(
+              l != null ? 'Weiter geht es mit dem nächsten Dart' : 'Neues Spiel am Handy starten',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16 * k, color: C.muted),
+            ),
           ],
         ),
-      ),
-    );
+      );
+    },
+  );
+}
 
 class _MatchBoard extends StatelessWidget {
   const _MatchBoard({required this.engine, this.next});
@@ -292,11 +512,13 @@ class _MatchBoard extends StatelessWidget {
   final String? next;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        // Schriftgrößen wachsen mit dem Bildschirm (Tablet an der Wand: gut aus der Ferne lesbar).
-        final k = (min(box.maxWidth, box.maxHeight) / 680).clamp(0.7, 1.7);
-        return _build(context, k);
-      });
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      // Schriftgrößen wachsen mit dem Bildschirm (Tablet an der Wand: gut aus der Ferne lesbar).
+      final k = (min(box.maxWidth, box.maxHeight) / 680).clamp(0.7, 1.7);
+      return _build(context, k);
+    },
+  );
 
   Widget _build(BuildContext context, double k) {
     final e = engine;
@@ -318,21 +540,22 @@ class _MatchBoard extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                    so ? '${e.start} · DOUBLE OUT' : e.title.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w800, letterSpacing: 3, color: C.accent)),
+                  so ? '${e.start} · DOUBLE OUT' : e.title.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w800, letterSpacing: 3, color: C.accent),
+                ),
               ),
               if (so) ...[SizedBox(width: 12 * k), _pill('SINGLE OUT IN DIESEM LEG', C.gold, k: k * 1.2)],
             ],
           ),
-          Text(e.subtitle, style: TextStyle(fontSize: 17 * k, color: C.muted)),
+          Text(
+            e.subtitle,
+            style: TextStyle(fontSize: 17 * k, color: C.muted),
+          ),
           if (next != null) nextUpBar(next!, k),
           SizedBox(height: 10 * k),
-          if (winner != null) ...[
-            _winnerBanner(winner, k),
-            const SizedBox(height: 8),
-          ],
+          if (winner != null) ...[_winnerBanner(winner, k), const SizedBox(height: 8)],
           Expanded(
             child: many
                 ? Column(
@@ -351,11 +574,11 @@ class _MatchBoard extends StatelessWidget {
                     ],
                   )
                 : landscape || e.n <= 1
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [for (final p in panels) Expanded(child: p)],
-                      )
-                    : Column(children: [for (final p in panels) Expanded(child: p)]),
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [for (final p in panels) Expanded(child: p)],
+                  )
+                : Column(children: [for (final p in panels) Expanded(child: p)]),
           ),
           if (hint != null && Store.checkoutHint) ...[
             SizedBox(height: 8 * k),
@@ -375,22 +598,33 @@ class _MatchBoard extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.symmetric(vertical: 10 * k, horizontal: 16 * k),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [col.withValues(alpha: hint.strong ? 0.28 : 0.10), col.withValues(alpha: 0.06)]),
+        gradient: LinearGradient(
+          colors: [
+            col.withValues(alpha: hint.strong ? 0.28 : 0.10),
+            col.withValues(alpha: 0.06),
+          ],
+        ),
         borderRadius: BorderRadius.circular(22 * k),
-        border: Border.all(color: col.withValues(alpha: hint.strong ? 0.8 : 0.3), width: hint.strong ? 2.5 : 1),
+        border: Border.all(
+          color: col.withValues(alpha: hint.strong ? 0.8 : 0.3),
+          width: hint.strong ? 2.5 : 1,
+        ),
         boxShadow: hint.strong ? [BoxShadow(color: col.withValues(alpha: 0.25), blurRadius: 24)] : null,
       ),
       child: parts.isEmpty
           ? FittedBox(
               fit: BoxFit.scaleDown,
               child: Text.rich(
-                TextSpan(children: [
-                  if (hint.label != null)
-                    TextSpan(
+                TextSpan(
+                  children: [
+                    if (hint.label != null)
+                      TextSpan(
                         text: '${hint.label!.toUpperCase()}   ',
-                        style: TextStyle(color: col, letterSpacing: 3 * k, fontSize: 32 * k)),
-                  TextSpan(text: hint.text),
-                ]),
+                        style: TextStyle(color: col, letterSpacing: 3 * k, fontSize: 32 * k),
+                      ),
+                    TextSpan(text: hint.text),
+                  ],
+                ),
                 style: TextStyle(fontSize: 44 * k, fontFamily: numFont, fontWeight: FontWeight.w800, color: C.text),
               ),
             )
@@ -400,13 +634,21 @@ class _MatchBoard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('FINISH',
-                        style: TextStyle(
-                            fontSize: 20 * k, fontWeight: FontWeight.w800, letterSpacing: 3 * k, color: col)),
+                    Text(
+                      'FINISH',
+                      style: TextStyle(fontSize: 20 * k, fontWeight: FontWeight.w800, letterSpacing: 3 * k, color: col),
+                    ),
                     if (rest != null)
-                      Text('$rest',
-                          style: TextStyle(
-                              fontFamily: numFont, fontSize: 40 * k, fontWeight: FontWeight.w800, height: 1, color: C.text)),
+                      Text(
+                        '$rest',
+                        style: TextStyle(
+                          fontFamily: numFont,
+                          fontSize: 40 * k,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                          color: C.text,
+                        ),
+                      ),
                   ],
                 ),
                 SizedBox(width: 18 * k),
@@ -419,19 +661,23 @@ class _MatchBoard extends StatelessWidget {
                         color: C.bg.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(18 * k),
                         border: Border.all(
-                            color: p.startsWith('D') || p == 'Bull' ? C.dbl : col.withValues(alpha: 0.7), width: 2.5),
+                          color: p.startsWith('D') || p == 'Bull' ? C.dbl : col.withValues(alpha: 0.7),
+                          width: 2.5,
+                        ),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 8 * k),
-                          child: Text(p,
-                              style: TextStyle(
-                                fontFamily: numFont,
-                                fontSize: 62 * k,
-                                fontWeight: FontWeight.w800,
-                                color: p.startsWith('D') || p == 'Bull' ? C.dbl : C.text,
-                              )),
+                          child: Text(
+                            p,
+                            style: TextStyle(
+                              fontFamily: numFont,
+                              fontSize: 62 * k,
+                              fontWeight: FontWeight.w800,
+                              color: p.startsWith('D') || p == 'Bull' ? C.dbl : C.text,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -449,8 +695,8 @@ class _MatchBoard extends StatelessWidget {
     final score = e.setsToWin != null
         ? [for (var i = 0; i < e.n; i++) e.setsOf(i)].join(' : ')
         : e.legsToWin != null
-            ? [for (var i = 0; i < e.n; i++) e.legsOf(i)].join(' : ')
-            : null;
+        ? [for (var i = 0; i < e.n; i++) e.legsOf(i)].join(' : ')
+        : null;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.85, end: 1),
       duration: const Duration(milliseconds: 700),
@@ -472,8 +718,10 @@ class _MatchBoard extends StatelessWidget {
             children: [
               Icon(Icons.emoji_events_rounded, color: C.gold, size: 52 * k),
               SizedBox(width: 16 * k),
-              Text('${e.players[w].name} gewinnt${score != null ? '   $score' : ''}',
-                  style: TextStyle(fontSize: 46 * k, fontWeight: FontWeight.w800)),
+              Text(
+                '${e.players[w].name} gewinnt${score != null ? '   $score' : ''}',
+                style: TextStyle(fontSize: 46 * k, fontWeight: FontWeight.w800),
+              ),
             ],
           ),
         ),
@@ -497,14 +745,16 @@ class _MatchBoard extends StatelessWidget {
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
-            child: Text(list.isEmpty ? '' : '= $sum',
-                style: TextStyle(
-                  fontFamily: numFont,
-                  fontSize: 48 * k,
-                  fontWeight: FontWeight.w800,
-                  color: active ? col : C.muted2,
-                  fontFeatures: tabular,
-                )),
+            child: Text(
+              list.isEmpty ? '' : '= $sum',
+              style: TextStyle(
+                fontFamily: numFont,
+                fontSize: 48 * k,
+                fontWeight: FontWeight.w800,
+                color: active ? col : C.muted2,
+                fontFeatures: tabular,
+              ),
+            ),
           ),
         ),
       ],
@@ -516,12 +766,12 @@ class _MatchBoard extends StatelessWidget {
     final c = d == null
         ? C.border
         : d.isMiss
-            ? C.danger
-            : d.isTriple
-                ? C.gold
-                : d.isDouble || d.isBull
-                    ? C.dbl
-                    : col;
+        ? C.danger
+        : d.isTriple
+        ? C.gold
+        : d.isDouble || d.isBull
+        ? C.dbl
+        : col;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       height: 84 * k,
@@ -529,19 +779,24 @@ class _MatchBoard extends StatelessWidget {
       decoration: BoxDecoration(
         color: d == null ? C.surface.withValues(alpha: 0.5) : c.withValues(alpha: active ? 0.22 : 0.12),
         borderRadius: BorderRadius.circular(16 * k),
-        border: Border.all(color: d == null ? C.border : c.withValues(alpha: strong ? 0.9 : 0.5), width: strong ? 2.5 : 1),
+        border: Border.all(
+          color: d == null ? C.border : c.withValues(alpha: strong ? 0.9 : 0.5),
+          width: strong ? 2.5 : 1,
+        ),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 6 * k),
-          child: Text(d?.label ?? '–',
-              style: TextStyle(
-                fontFamily: numFont,
-                fontSize: 46 * k,
-                fontWeight: FontWeight.w800,
-                color: d == null ? C.muted : (active ? C.text : C.muted2),
-              )),
+          child: Text(
+            d?.label ?? '–',
+            style: TextStyle(
+              fontFamily: numFont,
+              fontSize: 46 * k,
+              fontWeight: FontWeight.w800,
+              color: d == null ? C.muted : (active ? C.text : C.muted2),
+            ),
+          ),
         ),
       ),
     );
@@ -591,18 +846,27 @@ class _MatchBoard extends StatelessWidget {
                   child: Row(
                     children: [
                       Flexible(
-                        child: Text(e.players[i].name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 42 * k, fontWeight: FontWeight.w800, color: lit ? C.text : C.muted2)),
+                        child: Text(
+                          e.players[i].name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 42 * k,
+                            fontWeight: FontWeight.w800,
+                            color: lit ? C.text : C.muted2,
+                          ),
+                        ),
                       ),
                       SizedBox(width: 12 * k),
                       if (active) _pill('AM WURF', col, k: k),
                       if (won) _pill('SIEGER', C.gold, icon: Icons.emoji_events_rounded, k: k),
                       if (!won && place != null)
-                        _pill(place == 1 ? 'SIEGER' : 'PLATZ $place', C.gold,
-                            icon: place == 1 ? Icons.emoji_events_rounded : null, k: k),
+                        _pill(
+                          place == 1 ? 'SIEGER' : 'PLATZ $place',
+                          C.gold,
+                          icon: place == 1 ? Icons.emoji_events_rounded : null,
+                          k: k,
+                        ),
                     ],
                   ),
                 ),
@@ -614,32 +878,42 @@ class _MatchBoard extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
-                child: Text(e.mainValue(i),
-                    style: TextStyle(
-                      fontFamily: numFont,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 200,
-                      height: 1,
-                      color: won ? C.gold : (active ? C.text : C.muted2),
-                      fontFeatures: tabular,
-                      shadows: lit ? [Shadow(color: edge.withValues(alpha: 0.45), blurRadius: 30)] : null,
-                    )),
+                child: Text(
+                  e.mainValue(i),
+                  style: TextStyle(
+                    fontFamily: numFont,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 200,
+                    height: 1,
+                    color: won ? C.gold : (active ? C.text : C.muted2),
+                    fontFeatures: tabular,
+                    shadows: lit ? [Shadow(color: edge.withValues(alpha: 0.45), blurRadius: 30)] : null,
+                  ),
+                ),
               ),
             ),
             _darts(i, active, col, k),
             SizedBox(height: 10 * k),
             Row(
               children: [
-                Text(active ? 'Aufnahme läuft' : 'Letzte Aufnahme',
-                    style: TextStyle(fontSize: 22 * k, color: C.muted, fontWeight: FontWeight.w600)),
+                Text(
+                  active ? 'Aufnahme läuft' : 'Letzte Aufnahme',
+                  style: TextStyle(fontSize: 22 * k, color: C.muted, fontWeight: FontWeight.w600),
+                ),
                 SizedBox(width: 12 * k),
                 if (e.subLine(i) != null)
                   Expanded(
-                    child: Text(e.subLine(i)!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(fontSize: 26 * k, color: C.text.withValues(alpha: 0.8), fontWeight: FontWeight.w600)),
+                    child: Text(
+                      e.subLine(i)!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 26 * k,
+                        color: C.text.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -650,33 +924,45 @@ class _MatchBoard extends StatelessWidget {
   }
 
   Widget _pill(String text, Color c, {IconData? icon, double k = 1}) => Container(
-        padding: EdgeInsets.symmetric(horizontal: 12 * k, vertical: 5 * k),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: c.withValues(alpha: 0.7)),
+    padding: EdgeInsets.symmetric(horizontal: 12 * k, vertical: 5 * k),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: c.withValues(alpha: 0.7)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[Icon(icon, size: 20 * k, color: c), SizedBox(width: 5 * k)],
+        Text(
+          text,
+          style: TextStyle(fontSize: 17 * k, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: c),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[Icon(icon, size: 20 * k, color: c), SizedBox(width: 5 * k)],
-            Text(text, style: TextStyle(fontSize: 17 * k, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: c)),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 
   Widget _count(String label, int v, Color col, double k) => Padding(
-        padding: EdgeInsets.only(left: 18 * k),
-        child: Column(
-          children: [
-            Text(label.toUpperCase(),
-                style: TextStyle(fontSize: 15 * k, color: C.muted, fontWeight: FontWeight.w800, letterSpacing: 1)),
-            Text('$v',
-                style: TextStyle(
-                    fontFamily: numFont, fontSize: 50 * k, fontWeight: FontWeight.w800, color: col, height: 1.05)),
-          ],
+    padding: EdgeInsets.only(left: 18 * k),
+    child: Column(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(fontSize: 15 * k, color: C.muted, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
-      );
+        Text(
+          '$v',
+          style: TextStyle(
+            fontFamily: numFont,
+            fontSize: 50 * k,
+            fontWeight: FontWeight.w800,
+            color: col,
+            height: 1.05,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _TournamentBoard extends StatelessWidget {
@@ -692,9 +978,16 @@ class _TournamentBoard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(t.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
-          Text('${t.system.label} · ${t.playedCount}/${t.realCount} Matches',
-              textAlign: TextAlign.center, style: TextStyle(color: C.muted, fontSize: 15)),
+          Text(
+            t.name,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          ),
+          Text(
+            '${t.system.label} · ${t.playedCount}/${t.realCount} Matches',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: C.muted, fontSize: 15),
+          ),
           if (next != null) Center(child: nextUpBar(next!, 1.2)),
           const SizedBox(height: 8),
           Expanded(
@@ -710,16 +1003,21 @@ class _TournamentBoard extends StatelessWidget {
                             children: [
                               SizedBox(
                                 width: 40,
-                                child: Text('${i + 1}.',
-                                    style: TextStyle(
-                                        fontSize: 22, fontWeight: FontWeight.w800, color: medalColor(i + 1))),
+                                child: Text(
+                                  '${i + 1}.',
+                                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: medalColor(i + 1)),
+                                ),
                               ),
                               Expanded(
-                                child: Text(t.players[s.player].name,
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+                                child: Text(
+                                  t.players[s.player].name,
+                                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                                ),
                               ),
-                              Text('${s.wins} S · ${s.legsFor}:${s.legsAgainst}',
-                                  style: TextStyle(fontSize: 18, color: C.muted2, fontFeatures: tabular)),
+                              Text(
+                                '${s.wins} S · ${s.legsFor}:${s.legsAgainst}',
+                                style: TextStyle(fontSize: 18, color: C.muted2, fontFeatures: tabular),
+                              ),
                             ],
                           ),
                         ),

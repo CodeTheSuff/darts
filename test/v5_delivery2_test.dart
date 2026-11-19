@@ -73,7 +73,7 @@ void main() {
       LinkCoordinator.viewerState.value = null;
       await t.pumpWidget(MaterialApp(theme: buildTheme(C.p), home: const ScoreboardScreen()));
       await _steps(t, 2);
-      expect(find.text('Scoreboard'), findsOneWidget);
+      expect(find.text('Warte auf Spielstart …'), findsOneWidget);
       final c = _match(darts: const [Dart(20, 3), Dart(20, 3), Dart(20, 1)]);
       LinkCoordinator.viewerState.value = {'match': c.toJson()};
       await _steps(t, 2);

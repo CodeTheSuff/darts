@@ -6,6 +6,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../data/caller.dart';
 import '../data/match_controller.dart';
+import '../data/match_report.dart';
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../games/engine.dart';
@@ -19,6 +20,7 @@ import 'dartboard.dart';
 import 'keypad.dart';
 import 'link_coordinator.dart';
 import 'share_card.dart';
+import 'stats_table.dart';
 import 'theme.dart';
 
 class _Pause {
@@ -62,6 +64,41 @@ class _GameScreenState extends State<GameScreen> {
 
   bool _showResult = false;
   int? _statsPlayer;
+
+  /// Gerade angezeigte Leg-Statistik (nach jedem Leg).
+  LegReport? _legStats;
+  Completer<void>? _legStatsDone;
+
+  /// Match-Statistik vor der Ergebnisseite.
+  bool _matchStatsOpen = false;
+
+  MatchReport? get _report => MatchReport.build(
+        config: ctl.config,
+        players: ctl.players,
+        startIndex: ctl.startIndex,
+        seed: ctl.seed,
+        darts: ctl.darts,
+      );
+
+  /// Zeigt die Statistik des gerade beendeten Legs, bis „Weiter“ gedrückt wird
+  /// oder ein gekoppeltes Gerät schon den nächsten Dart einträgt.
+  Future<void> _showLegStats() async {
+    final leg = _report?.lastFinishedLeg;
+    if (leg == null || !mounted) return;
+    final done = _legStatsDone = Completer<void>();
+    setState(() => _legStats = leg);
+    // Gekoppelte Geräte dürfen schon weiterspielen – ihr Dart schließt die Statistik hier.
+    ctl.inputLocked = false;
+    await done.future;
+    ctl.inputLocked = _busy;
+  }
+
+  void _closeLegStats() {
+    if (_legStats == null) return;
+    setState(() => _legStats = null);
+    _legStatsDone?.complete();
+    _legStatsDone = null;
+  }
 
   String? _flash;
   bool _flashBad = false;
@@ -161,7 +198,14 @@ class _GameScreenState extends State<GameScreen> {
   int get _botDelay => const [1100, 700, 380][Store.botSpeed];
 
   bool get _botMayThrow =>
-      mounted && ctl.botTurn && !_busy && _pause == null && _celebration == null && !_showResult && _soDialog == null;
+      mounted &&
+      ctl.botTurn &&
+      !_busy &&
+      _pause == null &&
+      _celebration == null &&
+      _legStats == null &&
+      !_showResult &&
+      _soDialog == null;
 
   // ---------------------------------------------------------------- Weiterspielen um Plätze
 
@@ -312,6 +356,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _handleEvent(ThrowEvent ev) {
+    if (_legStats != null && !ev.control) _closeLegStats();
     if (ev.control) {
       setState(() {});
       return;
@@ -376,6 +421,9 @@ class _GameScreenState extends State<GameScreen> {
           await Future<void>.delayed(const Duration(milliseconds: 700));
         }
       }
+      // Leg beendet (Match läuft weiter): Leg-Statistik
+      final legOver = kind == CelebrationKind.legWon || kind == CelebrationKind.highFinish;
+      if (legOver && !ev.gameOver && e is X01Game && mounted) await _showLegStats();
     }
     if (!mounted) return;
     if (ev.gameOver) {
@@ -416,6 +464,7 @@ class _GameScreenState extends State<GameScreen> {
         _busy = false;
         _pause = null;
         _showResult = true;
+        _matchStatsOpen = e is X01Game;
       });
       return;
     }
@@ -502,7 +551,8 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
           ),
-          if (_showResult) _resultPanel(),
+          if (_showResult) _matchStatsOpen ? _matchStatsPanel() : _resultPanel(),
+          if (_legStats != null) _legStatsPanel(_legStats!),
           if (_celebration != null)
             Positioned.fill(
               child: CelebrationOverlay(
@@ -1032,6 +1082,107 @@ class _GameScreenState extends State<GameScreen> {
     ],
   );
 
+  /// Gemeinsamer Rahmen der Statistik-Seiten.
+  Widget _statsPage({
+    required String eyebrow,
+    required String title,
+    required Color color,
+    required List<Widget> children,
+    required String button,
+    required VoidCallback onButton,
+  }) {
+    return Positioned.fill(
+      child: Container(
+        color: C.bg,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(eyebrow,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 2)),
+                const SizedBox(height: 4),
+                Text(title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 56,
+                  child: Key3(
+                    semantics: button,
+                    onTap: onButton,
+                    gradient: C.accentGradient,
+                    borderColor: Colors.transparent,
+                    radius: 16,
+                    child: Text(button, style: TextStyle(color: C.onAccent, fontWeight: FontWeight.w800, fontSize: 17)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _card(String title, Widget child) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(18)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title,
+                style: TextStyle(color: C.muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1)),
+            const SizedBox(height: 10),
+            child,
+          ],
+        ),
+      );
+
+  /// Statistik des gerade beendeten Legs.
+  Widget _legStatsPanel(LegReport leg) {
+    final w = leg.winner!;
+    final ws = leg.players[w];
+    return _statsPage(
+      eyebrow: 'LEG ${leg.number} BEENDET',
+      title: '${e.players[w].name} checkt ${ws.finish} mit ${ws.darts} Darts',
+      color: _color(w),
+      children: [_card('LEG-STATISTIK', StatsTable(players: e.players, rows: legRows(leg)))],
+      button: 'Weiter',
+      onButton: _closeLegStats,
+    );
+  }
+
+  /// Statistik des ganzen Matches (vor der Ergebnisseite).
+  Widget _matchStatsPanel() {
+    final r = _report;
+    if (r == null) return _resultPanel();
+    final res = e.results();
+    final w = res.first.playerIndex;
+    final legsLine = e.n == 2 && e.legsToWin != null ? '  ${e.legsOf(w)} : ${e.legsOf(1 - w)}' : '';
+    return _statsPage(
+      eyebrow: 'MATCHSTATISTIK',
+      title: '${e.players[w].name} gewinnt$legsLine',
+      color: C.gold,
+      children: [
+        _card('VERGLEICH', StatsTable(players: e.players, rows: matchRows(r))),
+        if (r.legs.length > 1) _card('LEGS', LegList(report: r)),
+        _hitSection(res),
+      ],
+      button: 'Fortsetzen',
+      onButton: () => setState(() => _matchStatsOpen = false),
+    );
+  }
+
   Widget _resultPanel() {
     final res = e.results();
     final winner = res.first;
@@ -1121,6 +1272,12 @@ class _GameScreenState extends State<GameScreen> {
                                   ),
                                 ],
                               ),
+                            ),
+                          if (e is X01Game)
+                            TextButton.icon(
+                              onPressed: () => setState(() => _matchStatsOpen = true),
+                              icon: const Icon(Icons.query_stats_rounded),
+                              label: const Text('Matchstatistik ansehen', style: TextStyle(fontWeight: FontWeight.w700)),
                             ),
                           const SizedBox(height: 10),
                           _hitSection(res),

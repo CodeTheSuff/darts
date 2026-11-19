@@ -9,10 +9,15 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.5.0';
+const appVersion = '2.6.0';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.6.0': [
+    (Icons.leaderboard_rounded, 'Leg-Statistik', 'Nach jedem Leg: Average, First 9, Checkout, hohe Aufnahmen im Vergleich'),
+    (Icons.query_stats_rounded, 'Match-Statistik', 'Am Ende Vergleichstabelle, alle Legs und Trefferbild – dann Fortsetzen'),
+    (Icons.tv_rounded, 'Anzeige', 'Statistiken groß auf dem Tablet und ein neuer Wartebildschirm'),
+  ],
   '2.5.0': [
     (Icons.build_circle_rounded, 'Stabiler', 'Keine Abstürze im Grafiktreiber mehr, Töne ohne Hänger, Caller wird nicht mehr stummgeschaltet'),
     (Icons.format_list_numbered_rounded, 'Ausbullen mit Reihenfolge', 'Alle Spieler der Reihe nach antippen – 1., 2., 3. …'),
