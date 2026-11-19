@@ -1,6 +1,8 @@
 /// Berechnet Checkout-Wege (max. 3 Darts).
 library;
 
+import 'checkout_table.dart';
+
 class _Seg {
   final String label;
   final int value;
@@ -41,6 +43,11 @@ const bogeyNumbers = {159, 162, 163, 165, 166, 168, 169};
 
 /// Liefert einen sinnvollen Checkout-Weg oder `null`.
 List<String>? findCheckout(int rest, int dartsLeft, {bool doubleOut = true, bool avoidDoubles = false}) {
+  // Double Out: zuerst der übliche Weg aus der Standardtabelle, sofern er mit den übrigen Darts passt.
+  if (doubleOut) {
+    final std = standardCheckouts[rest];
+    if (std != null && std.length <= dartsLeft) return List.of(std);
+  }
   if (!doubleOut && avoidDoubles) {
     final r = _route(rest, dartsLeft, _noDouble, 180, 1, setup: _noDouble);
     if (r != null) return r;

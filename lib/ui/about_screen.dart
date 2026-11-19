@@ -9,10 +9,14 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.4.2';
+const appVersion = '2.4.3';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.4.3': [
+    (Icons.flag_rounded, 'TV-Checkouts', 'Finish-Wege aus der Standard-Checkouttabelle, z. B. 121 = T20 · T11 · D14'),
+    (Icons.skip_next_rounded, 'Als Nächstes', 'Die Anzeige zeigt im Turnier die nächste Paarung'),
+  ],
   '2.4.2': [
     (Icons.wifi_find_rounded, 'Gerätesuche repariert', 'Sucht in großen WLANs gleichmäßig statt alles auf einmal – findet die anderen Geräte jetzt zuverlässig'),
     (Icons.keyboard_rounded, 'Einfacher verbinden', 'Kurzadresse am Host, der Netzanfang ist beim Eintippen schon ausgefüllt'),

@@ -84,4 +84,18 @@ void main() {
     expect(b.mergeFrom(a), isFalse);
     expect(a.revision, b.revision);
   });
+
+  test('Turnier-Abgleich: verschiedene Ergebnisse in derselben Millisekunde enden gleich', () {
+    final a = _t();
+    final b = Tournament.fromJson(a.toJson());
+    final id = a.matches[0].id;
+    a.record(id, winnerSide: 0, legs: [1, 0]);
+    b.record(id, winnerSide: 1, legs: [0, 1]);
+    b.matchById(id).at = a.matchById(id).at; // exakt gleichzeitig
+    expect(a.revision == b.revision, isFalse);
+    a.mergeFrom(b);
+    b.mergeFrom(a);
+    expect(a.matchById(id).winnerSide, b.matchById(id).winnerSide);
+    expect(a.revision, b.revision);
+  });
 }

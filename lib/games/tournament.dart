@@ -141,6 +141,9 @@ class TMatch {
 
   bool get played => winnerSide != null;
 
+  /// Ergebnis als vergleichbarer Text.
+  String get resultKey => '$id|$at|$winnerSide|${legs.join(',')}|${sets.join(',')}|${points.join(',')}|${darts.join(',')}';
+
   /// Ergebnis von [o] übernehmen.
   void copyResult(TMatch o) {
     winnerSide = o.winnerSide;
@@ -632,12 +635,17 @@ class Tournament {
   }
 
   /// Kennung des Ergebnisstands (ändert sich bei jedem Eintrag oder Zurücksetzen).
+  /// Enthält eine Prüfsumme über alle Ergebnisse, damit auch gleichzeitige Einträge auffallen.
   String get revision {
     var latest = 0;
+    var h = 0x811c9dc5; // FNV-1a, auf allen Geräten gleich
     for (final m in matches) {
       if (m.at > latest) latest = m.at;
+      for (final c in m.resultKey.codeUnits) {
+        h = ((h ^ c) * 0x01000193) & 0xffffffff;
+      }
     }
-    return '$playedCount:$latest';
+    return '$playedCount:$latest:${h.toRadixString(16)}';
   }
 
   /// Ergebnisse eines anderen Geräts einmischen: je Match gewinnt die neuere Änderung.
@@ -646,7 +654,10 @@ class Tournament {
     var changed = false;
     for (final o in other.matches) {
       final m = matches.where((x) => x.id == o.id).firstOrNull;
-      if (m == null || o.at <= m.at) continue;
+      if (m == null || o.resultKey == m.resultKey) continue;
+      // Neuere Änderung gewinnt; bei gleicher Zeit entscheidet eine feste Regel (auf beiden Geräten gleich).
+      final newer = o.at > m.at || (o.at == m.at && o.resultKey.compareTo(m.resultKey) > 0);
+      if (!newer) continue;
       m.copyResult(o);
       changed = true;
     }

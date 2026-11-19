@@ -129,19 +129,34 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  // Turnier nur neu einlesen, wenn es sich geändert hat (unverändert = gleiches Objekt).
+  Object? _tourSrc;
+  Tournament? _tour;
+
+  Tournament? _tournament(Object? tj) {
+    if (!identical(tj, _tourSrc)) {
+      _tourSrc = tj;
+      _tour = null;
+      if (tj is Map) {
+        try {
+          _tour = Tournament.fromJson(Map<String, dynamic>.from(tj));
+        } catch (_) {}
+      }
+    }
+    return _tour;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tj = LinkCoordinator.viewerState.value?['tournament'];
     final c = _ctl;
+    final t = _tournament(tj);
+    final next = t == null ? null : nextMatchLabel(t, exceptMatch: c?.tournamentMatchId);
     Widget body;
     if (c != null) {
-      body = _MatchBoard(engine: c.engine);
-    } else if (tj is Map) {
-      Tournament? t;
-      try {
-        t = Tournament.fromJson(Map<String, dynamic>.from(tj));
-      } catch (_) {}
-      body = t == null ? _waiting() : _TournamentBoard(t: t);
+      body = _MatchBoard(engine: c.engine, next: next);
+    } else if (t != null) {
+      body = _TournamentBoard(t: t, next: next);
     } else {
       body = _waiting();
     }
@@ -222,9 +237,48 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
       );
 }
 
+/// „Als Nächstes“ im Turnier: das nächste spielbare Match (ohne das gerade laufende).
+String? nextMatchLabel(Tournament t, {String? exceptMatch}) {
+  for (final m in t.playable) {
+    if (m.id == exceptMatch) continue;
+    final (a, b) = t.participants(m);
+    if (a == null || b == null) continue;
+    return '${t.players[a].name} – ${t.players[b].name}';
+  }
+  return null;
+}
+
+/// Leiste „Als Nächstes“ oben auf der Anzeige.
+Widget nextUpBar(String text, double k) => Container(
+      margin: EdgeInsets.only(top: 6 * k),
+      padding: EdgeInsets.symmetric(horizontal: 16 * k, vertical: 6 * k),
+      decoration: BoxDecoration(
+        color: C.accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: C.accent.withValues(alpha: 0.5)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.skip_next_rounded, color: C.accent, size: 26 * k),
+            SizedBox(width: 8 * k),
+            Text('ALS NÄCHSTES',
+                style: TextStyle(fontSize: 16 * k, fontWeight: FontWeight.w800, letterSpacing: 2, color: C.accent)),
+            SizedBox(width: 14 * k),
+            Text(text, style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w800)),
+          ],
+        ),
+      ),
+    );
+
 class _MatchBoard extends StatelessWidget {
-  const _MatchBoard({required this.engine});
+  const _MatchBoard({required this.engine, this.next});
   final GameEngine engine;
+
+  /// Turnier: nächste Paarung.
+  final String? next;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
@@ -258,6 +312,7 @@ class _MatchBoard extends StatelessWidget {
             ],
           ),
           Text(e.subtitle, style: TextStyle(fontSize: 17 * k, color: C.muted)),
+          if (next != null) nextUpBar(next!, k),
           SizedBox(height: 10 * k),
           if (winner != null) ...[
             _winnerBanner(winner, k),
@@ -581,8 +636,9 @@ class _MatchBoard extends StatelessWidget {
 }
 
 class _TournamentBoard extends StatelessWidget {
-  const _TournamentBoard({required this.t});
+  const _TournamentBoard({required this.t, this.next});
   final Tournament t;
+  final String? next;
 
   @override
   Widget build(BuildContext context) {
@@ -595,6 +651,7 @@ class _TournamentBoard extends StatelessWidget {
           Text(t.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
           Text('${t.system.label} · ${t.playedCount}/${t.realCount} Matches',
               textAlign: TextAlign.center, style: TextStyle(color: C.muted, fontSize: 15)),
+          if (next != null) Center(child: nextUpBar(next!, 1.2)),
           const SizedBox(height: 8),
           Expanded(
             child: table
