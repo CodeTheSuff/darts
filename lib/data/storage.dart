@@ -476,13 +476,9 @@ class Store {
   static void untrustGuest(String device) => _saveGuests(_guests..remove(device));
 
   /// Caller-Ansage.
-  static bool get caller => _p.getBool('caller') ?? false;
-  static set caller(bool v) => _p.setBool('caller', v);
-  static String get callerLang => _p.getString('callerLang') ?? 'en';
-  static set callerLang(String v) => _p.setString('callerLang', v);
-  /// Gewählte Stimme je Sprache ('' = automatisch tiefe Männerstimme).
-  static String callerVoice(String lang) => _p.getString('callerVoice_$lang') ?? '';
-  static void setCallerVoice(String lang, String v) => _p.setString('callerVoice_$lang', v);
+  /// Ansagen mit den eigenen Sounds (80–180, Bullseye, 1, You win).
+  static bool get announce => _p.getBool('announce') ?? true;
+  static set announce(bool v) => _p.setBool('announce', v);
 
   /// Einführung beim ersten Start gesehen.
   static bool get onboarded => _p.getBool('onboarded') ?? false;

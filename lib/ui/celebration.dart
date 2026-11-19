@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/sound.dart';
+import '../data/storage.dart';
 import '../games/engine.dart';
 import '../models/dart.dart';
 import 'dartboard.dart';
@@ -18,7 +19,19 @@ CelebrationKind kindOf(Celebration c) => switch (c) {
       Celebration.legWon => CelebrationKind.legWon,
     };
 
-String celebrationSound(CelebrationKind k) => switch (k) {
+/// Jubel-Ton zur Animation (null = keiner, weil die eigenen Ansagen ihn ersetzen).
+String? celebrationSound(CelebrationKind k) {
+  if (Store.announce &&
+      (k == CelebrationKind.ton ||
+          k == CelebrationKind.ton40 ||
+          k == CelebrationKind.max180 ||
+          k == CelebrationKind.match)) {
+    return null;
+  }
+  return _cheer(k);
+}
+
+String _cheer(CelebrationKind k) => switch (k) {
       CelebrationKind.ton => 'ton',
       CelebrationKind.ton40 => 'ton40',
       CelebrationKind.max180 => 'max180',
@@ -28,7 +41,8 @@ String celebrationSound(CelebrationKind k) => switch (k) {
     };
 
 class _Burst {
-  _Burst(this.t0, this.origin, this.count, this.speed, this.colors, this.seed, {this.ring = false});
+  _Burst(this.t0, this.origin, this.count, this.speed, this.colors, this.seed,
+      {this.ring = false, this.rocket = false, this.launchX});
   final double t0;
   final Offset origin; // 0..1
   final int count;
@@ -36,6 +50,13 @@ class _Burst {
   final List<Color> colors;
   final int seed;
   final bool ring;
+
+  /// Feuerwerksrakete: steigt vor [t0] vom unteren Rand auf und explodiert bei [origin].
+  final bool rocket;
+  final double? launchX;
+
+  /// Steigzeit einer Rakete in Sekunden.
+  static const climb = 0.55;
 }
 
 class _Particle {
@@ -75,12 +96,12 @@ class CelebrationOverlay extends StatefulWidget {
 
 class _CelebrationOverlayState extends State<CelebrationOverlay> with SingleTickerProviderStateMixin {
   late final double duration = switch (widget.kind) {
-    CelebrationKind.ton => 2.6,
-    CelebrationKind.ton40 => 3.1,
-    CelebrationKind.max180 => 4.4,
-    CelebrationKind.highFinish => 3.3,
-    CelebrationKind.legWon => 2.1,
-    CelebrationKind.match => 3.4,
+    CelebrationKind.ton => 3.6,
+    CelebrationKind.ton40 => 4.1,
+    CelebrationKind.max180 => 7.4,
+    CelebrationKind.highFinish => 4.3,
+    CelebrationKind.legWon => 3.1,
+    CelebrationKind.match => 4.4,
   };
 
   late final AnimationController _c = AnimationController(
@@ -98,7 +119,8 @@ class _CelebrationOverlayState extends State<CelebrationOverlay> with SingleTick
   @override
   void initState() {
     super.initState();
-    Sound.play(celebrationSound(widget.kind));
+    final snd = celebrationSound(widget.kind);
+    if (snd != null) Sound.play(snd);
     _c.forward().whenComplete(_finish);
   }
 
@@ -137,6 +159,30 @@ class _CelebrationOverlayState extends State<CelebrationOverlay> with SingleTick
           _Burst(0.30, board, 0, 1.6, [C.gold], 2, ring: true),
           _Burst(0.55, board, 0, 1.3, [col], 3, ring: true),
         ];
+        // Großes Feuerwerk: Raketen in Wellen über die ganze Dauer
+        const palettes = [
+          [Color(0xFFFFD166), Colors.white],
+          [Color(0xFFFF5C8A), Color(0xFFFFC2D4)],
+          [Color(0xFF5AA9FF), Colors.white],
+          [Color(0xFF7CFFB2), Color(0xFFE8FFF2)],
+          [Color(0xFFB48CFF), Color(0xFFFFD166)],
+          [Color(0xFFFF9F43), Color(0xFFFFE0B8)],
+        ];
+        for (var i = 0; i < 16; i++) {
+          final x = 0.12 + rnd.nextDouble() * 0.76;
+          // abwechselnd über und unter der Scheibe, damit das Feuerwerk frei sichtbar ist
+          final y = i.isEven ? 0.06 + rnd.nextDouble() * 0.14 : 0.74 + rnd.nextDouble() * 0.14;
+          list.add(_Burst(
+            0.9 + i * 0.36 + rnd.nextDouble() * 0.2,
+            Offset(x, y),
+            110 + rnd.nextInt(50),
+            1.25 + rnd.nextDouble() * 0.45,
+            palettes[i % palettes.length],
+            40 + i,
+            rocket: true,
+            launchX: x + (rnd.nextDouble() - 0.5) * 0.12,
+          ));
+        }
         for (var i = 0; i < 9; i++) {
           list.add(_Burst(
             0.7 + i * 0.32 + rnd.nextDouble() * 0.15,
@@ -179,11 +225,11 @@ class _CelebrationOverlayState extends State<CelebrationOverlay> with SingleTick
       final a = rnd.nextDouble() * 2 * pi;
       return _Particle(
         Offset(cos(a), sin(a)),
-        b.speed * (0.35 + rnd.nextDouble() * 0.9),
-        2 + rnd.nextDouble() * 3.5,
+        b.speed * (b.rocket ? 0.55 + rnd.nextDouble() * 0.5 : 0.35 + rnd.nextDouble() * 0.9),
+        b.rocket ? 2.4 + rnd.nextDouble() * 2.8 : 2 + rnd.nextDouble() * 3.5,
         b.colors[rnd.nextInt(b.colors.length)],
-        0.9 + rnd.nextDouble() * 0.9,
-        rnd.nextDouble() < 0.45,
+        b.rocket ? 1.3 + rnd.nextDouble() * 0.9 : 0.9 + rnd.nextDouble() * 0.9,
+        b.rocket ? rnd.nextDouble() < 0.7 : rnd.nextDouble() < 0.45,
       );
     });
   }
@@ -375,8 +421,38 @@ class _ParticlePainter extends CustomPainter {
     final unit = size.shortestSide;
     for (final b in bursts) {
       final dt = t - b.t0;
-      if (dt < 0) continue;
       final o = Offset(b.origin.dx * size.width, b.origin.dy * size.height);
+      if (b.rocket && dt < 0) {
+        // Aufsteigende Rakete mit leuchtendem Schweif
+        if (dt < -_Burst.climb) continue;
+        final k = Curves.easeOut.transform(1 + dt / _Burst.climb);
+        final start = Offset((b.launchX ?? b.origin.dx) * size.width, size.height * 1.02);
+        final pos = Offset.lerp(start, o, k)!;
+        final tail = Offset.lerp(start, o, (k - 0.12).clamp(0.0, 1.0))!;
+        canvas.drawLine(
+          tail,
+          pos,
+          Paint()
+            ..shader = LinearGradient(colors: [b.colors.first.withValues(alpha: 0), b.colors.last])
+                .createShader(Rect.fromPoints(tail, pos))
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round,
+        );
+        canvas.drawCircle(pos, 3.5, Paint()..color = Colors.white);
+        continue;
+      }
+      if (dt < 0) continue;
+      if (b.rocket && dt < 0.18) {
+        // kurzer Lichtblitz bei der Explosion
+        final f = 1 - dt / 0.18;
+        canvas.drawCircle(
+          o,
+          unit * 0.09 * (1 + dt * 3),
+          Paint()
+            ..color = b.colors.last.withValues(alpha: 0.55 * f)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+        );
+      }
       if (b.ring) {
         if (dt > 0.8) continue;
         final k = dt / 0.8;
@@ -399,7 +475,9 @@ class _ParticlePainter extends CustomPainter {
         final dist = unit * 0.55 * p.speed * (1 - exp(-drag * dt)) / drag * 2.2;
         final fall = unit * 0.18 * dt * dt;
         final pos = o + p.dir * dist + Offset(0, fall);
-        final alpha = (1 - k) * (1 - k);
+        var alpha = (1 - k) * (1 - k);
+        // Feuerwerksfunken glitzern zum Ende hin
+        if (b.rocket && k > 0.45) alpha *= 0.55 + 0.45 * sin(dt * 38 + p.size * 7).abs();
         final paint = Paint()..color = p.color.withValues(alpha: alpha);
         if (p.streak) {
           final vel = p.dir * (unit * 0.55 * p.speed * exp(-drag * dt) * 0.05) + Offset(0, unit * 0.36 * dt * 0.05);

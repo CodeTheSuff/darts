@@ -1,4 +1,3 @@
-import 'package:darts_counter/data/caller.dart';
 import 'package:darts_counter/data/match_controller.dart';
 import 'package:darts_counter/data/storage.dart';
 import 'package:darts_counter/games/engine.dart';
@@ -44,16 +43,8 @@ MatchController _match({List<Dart> darts = const []}) {
 }
 
 void main() {
-  test('Caller: Ansagen auf Englisch und Deutsch', () {
-    expect(Caller.phraseFor(180), 'One hundred and eighty!');
-    expect(Caller.phraseFor(180, lang: 'de'), 'Hundertachtzig!');
-    expect(Caller.phraseFor(60), '60');
-    expect(Caller.phraseFor(45, bust: true), 'No score');
-    expect(Caller.phraseFor(0, lang: 'de'), 'Kein Score');
-  });
-
-  testWidgets('Caller an: Spiel läuft ohne Fehler, auch ohne Sprachausgabe', (t) async {
-    await _setup(t, prefs: {'caller': true, 'sound': true});
+  testWidgets('Ansagen an: Spiel läuft ohne Fehler, auch ohne Audio', (t) async {
+    await _setup(t, prefs: {'announce': true, 'sound': true});
     final c = _match();
     await t.pumpWidget(MaterialApp(theme: buildTheme(C.p), home: GameScreen(controller: c)));
     await _steps(t, 2);

@@ -4,13 +4,13 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../data/caller.dart';
+import '../data/callouts.dart';
 import '../data/match_controller.dart';
 import '../data/match_report.dart';
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../games/engine.dart';
-import '../games/checkout.dart';
+
 import '../games/minigames.dart';
 import '../games/x01.dart';
 import '../models/dart.dart';
@@ -73,12 +73,12 @@ class _GameScreenState extends State<GameScreen> {
   bool _matchStatsOpen = false;
 
   MatchReport? get _report => MatchReport.build(
-        config: ctl.config,
-        players: ctl.players,
-        startIndex: ctl.startIndex,
-        seed: ctl.seed,
-        darts: ctl.darts,
-      );
+    config: ctl.config,
+    players: ctl.players,
+    startIndex: ctl.startIndex,
+    seed: ctl.seed,
+    darts: ctl.darts,
+  );
 
   /// Zeigt die Statistik des gerade beendeten Legs, bis „Weiter“ gedrückt wird
   /// oder ein gekoppeltes Gerät schon den nächsten Dart einträgt.
@@ -225,8 +225,10 @@ class _GameScreenState extends State<GameScreen> {
         return AlertDialog(
           icon: Icon(Icons.emoji_events_rounded, color: C.gold, size: 40),
           title: Text(place == 1 ? '$who gewinnt!' : '$who wird $place.'),
-          content: Text('Weiterspielen um Platz ${place + 1}? Die übrigen ${g.remaining} Spieler spielen das Leg '
-              'mit ihren Restpunkten zu Ende.'),
+          content: Text(
+            'Weiterspielen um Platz ${place + 1}? Die übrigen ${g.remaining} Spieler spielen das Leg '
+            'mit ihren Restpunkten zu Ende.',
+          ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Beenden')),
             FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Weiterspielen')),
@@ -367,20 +369,10 @@ class _GameScreenState extends State<GameScreen> {
       setState(() => _pause = null);
     }
     Sound.play('thunk', volume: 0.7);
+    Callouts.onThrow(ev, e);
     if (ev.message != null) _showFlash(ev.message!, bad: ev.bust);
     if (ev.bust) Sound.play('bust', volume: 0.8);
-    if (ev.turnEnded) {
-      if (e is X01Game) Caller.visit(ev.bust ? 0 : sumOf(ev.turnDarts), bust: ev.bust);
-      _afterTurn(ev);
-    }
-  }
-
-  /// Caller: Restpunkte ansagen, wenn der Spieler am Wurf auschecken kann.
-  void _announceRequire() {
-    final g = e;
-    if (g is! X01Game || g.finished || !mounted) return;
-    final rest = g.scores[g.cur];
-    if (findCheckout(rest, 3, doubleOut: g.doubleOutNow) != null) Caller.require(g.players[g.cur].name, rest);
+    if (ev.turnEnded) _afterTurn(ev);
   }
 
   Future<void> _afterTurn(ThrowEvent ev) async {
@@ -396,7 +388,6 @@ class _GameScreenState extends State<GameScreen> {
       // Inzwischen Rückgängig oder neue Aufnahme? Dann nichts mehr ansagen.
       if (!mounted || token != _pauseToken) return;
       setState(() => _pause = null);
-      _announceRequire();
       _scheduleBot();
       return;
     }
@@ -417,7 +408,8 @@ class _GameScreenState extends State<GameScreen> {
         if (show) {
           await _celebrate(_CelebrationData(kind, p, ev.turnDarts, ev.celebrationValue, label: label));
         } else {
-          Sound.play(celebrationSound(kind));
+          final snd = celebrationSound(kind);
+          if (snd != null) Sound.play(snd);
           await Future<void>.delayed(const Duration(milliseconds: 700));
         }
       }
@@ -444,7 +436,7 @@ class _GameScreenState extends State<GameScreen> {
             label: solo ? 'GESCHAFFT' : (e.legsToWin != null ? 'MATCH GEWONNEN' : 'SIEG'),
           ),
         );
-      } else {
+      } else if (!Callouts.replacesCheers) {
         Sound.play('win');
       }
       if (!mounted) return;
@@ -477,7 +469,6 @@ class _GameScreenState extends State<GameScreen> {
     } else if (mounted) {
       setState(() => _busy = false);
     }
-    _announceRequire();
     _scheduleBot();
   }
 
@@ -1100,13 +1091,17 @@ class _GameScreenState extends State<GameScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(eyebrow,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 2)),
+                Text(
+                  eyebrow,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 2),
+                ),
                 const SizedBox(height: 4),
-                Text(title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 14),
                 Expanded(
                   child: SingleChildScrollView(
@@ -1122,7 +1117,10 @@ class _GameScreenState extends State<GameScreen> {
                     gradient: C.accentGradient,
                     borderColor: Colors.transparent,
                     radius: 16,
-                    child: Text(button, style: TextStyle(color: C.onAccent, fontWeight: FontWeight.w800, fontSize: 17)),
+                    child: Text(
+                      button,
+                      style: TextStyle(color: C.onAccent, fontWeight: FontWeight.w800, fontSize: 17),
+                    ),
                   ),
                 ),
               ],
@@ -1134,19 +1132,21 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _card(String title, Widget child) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(18)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title,
-                style: TextStyle(color: C.muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1)),
-            const SizedBox(height: 10),
-            child,
-          ],
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+    decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(18)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: TextStyle(color: C.muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
-      );
+        const SizedBox(height: 10),
+        child,
+      ],
+    ),
+  );
 
   /// Statistik des gerade beendeten Legs.
   Widget _legStatsPanel(LegReport leg) {
@@ -1277,7 +1277,10 @@ class _GameScreenState extends State<GameScreen> {
                             TextButton.icon(
                               onPressed: () => setState(() => _matchStatsOpen = true),
                               icon: const Icon(Icons.query_stats_rounded),
-                              label: const Text('Matchstatistik ansehen', style: TextStyle(fontWeight: FontWeight.w700)),
+                              label: const Text(
+                                'Matchstatistik ansehen',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
                             ),
                           const SizedBox(height: 10),
                           _hitSection(res),

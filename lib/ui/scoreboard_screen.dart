@@ -5,11 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../data/caller.dart';
+import '../data/callouts.dart';
 import '../data/match_controller.dart';
 import '../data/match_report.dart';
 import '../data/storage.dart';
-import '../games/checkout.dart';
+
 import '../games/engine.dart';
 import '../games/x01.dart';
 import '../games/tournament.dart';
@@ -66,12 +66,14 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WakelockPlus.enable().catchError((_) {});
     LinkCoordinator.viewerState.addListener(_onState);
+    Callouts.isDisplay = true;
     _onState(rebuild: false);
   }
 
   @override
   void dispose() {
     LinkCoordinator.viewerState.removeListener(_onState);
+    Callouts.isDisplay = false;
     _pulse.dispose();
     _sub?.cancel();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -115,6 +117,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   void _onEvent(ThrowEvent ev) {
     final e = _ctl?.engine;
     if (e == null || ev.control) return;
+    Callouts.onThrow(ev, e);
     // Der erste Dart des nächsten Legs (bzw. beim Weiterspielen) schließt die Statistik.
     if (_boardLeg != null || _boardMatch) {
       _boardLeg = null;
@@ -133,13 +136,6 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
       if (mounted) setState(() {});
     }
     // Caller-Ansage auch auf der Anzeige (wenn dort eingeschaltet)
-    if (e is X01Game) {
-      Caller.visit(ev.bust ? 0 : sumOf(ev.turnDarts), bust: ev.bust);
-      if (!e.finished) {
-        final rest = e.scores[e.cur];
-        if (findCheckout(rest, 3, doubleOut: e.doubleOutNow) != null) Caller.require(e.players[e.cur].name, rest);
-      }
-    }
     if (!Store.celebrations) return;
     if (ev.celebration != null) {
       final kind = kindOf(ev.celebration!);

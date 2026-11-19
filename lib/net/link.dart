@@ -149,6 +149,13 @@ class Link extends ChangeNotifier {
   /// Anzahl der anderen verbundenen Geräte.
   int get peerCount => isHost ? _approved.length : (isConnected ? max(1, remoteDevices - 1) : 0);
 
+  /// Gast: Zahl der Anzeige-Geräte, die mit dem Host verbunden sind.
+  int remoteViewers = 0;
+
+  /// Ist irgendwo eine Anzeige (Punktetafel) verbunden?
+  bool get hasViewer =>
+      isHost ? _approved.any((p) => p.viewer) : (isConnected && (joinedAsViewer || remoteViewers > 0));
+
   List<String> get peerNames => [for (final p in _approved) p.viewer ? '${p.name} · Anzeige' : p.name];
 
   // ---------------------------------------------------------------- Host
@@ -347,6 +354,7 @@ class Link extends ChangeNotifier {
     final st = {
       't': 'state',
       'devices': _approved.length + 1,
+      'viewers': _approved.where((p) => p.viewer).length,
       'host': Store.deviceName,
       'hostDevice': Store.deviceId,
       ...?hostState?.call(),
@@ -576,6 +584,7 @@ class Link extends ChangeNotifier {
           _lastTourIn = msg['tournament'];
         }
         remoteDevices = (msg['devices'] as num?)?.toInt() ?? 2;
+        remoteViewers = (msg['viewers'] as num?)?.toInt() ?? 0;
         hostName = msg['host'] as String? ?? hostName;
         final hd = msg['hostDevice'] as String?;
         // Nur ein ausgewiesener Host (Schlüssel) bzw. ein per Code erlaubter wird gemerkt.

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:darts_counter/data/caller.dart';
 import 'package:darts_counter/data/sound.dart';
 import 'package:darts_counter/data/storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,15 +42,5 @@ void main() {
     expect(_FakeVoice.created, fixed, reason: 'keine neuen Player je Ton');
     expect(Sound.voiceCount, fixed);
     await Sound.resetForTest();
-  });
-
-  test('Eine Ansage, die nie fertig wird, blockiert die nächste nicht', () async {
-    Caller.queueTimeout = const Duration(milliseconds: 100);
-    final never = Completer<void>();
-    var second = false;
-    unawaited(Caller.enqueueForTest(() => never.future));
-    await Caller.enqueueForTest(() async => second = true);
-    expect(second, isTrue);
-    Caller.queueTimeout = const Duration(seconds: 20);
   });
 }

@@ -7,7 +7,6 @@ import 'package:share_plus/share_plus.dart';
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../data/sync.dart';
-import '../data/caller.dart';
 import 'look.dart';
 import 'about_screen.dart';
 import 'share_screens.dart';
@@ -133,32 +132,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _switch(Icons.swap_horiz_rounded, 'Single Out anbieten',
                 'Nach 5 Aufnahmen ohne Treffer im Finish: Leg auch ohne Double beenden', Store.singleOutOffer,
                 (v) => setState(() => Store.singleOutOffer = v)),
-            _switch(Icons.record_voice_over_rounded, 'Caller-Ansage', 'Stimme sagt Punkte und Restpunkte an',
-                Store.caller, (v) {
-              setState(() => Store.caller = v);
-              if (v) Caller.test();
-            }),
-            if (Store.caller)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(62, 0, 14, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<String>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: 'en', label: Text('Englisch (TV)')),
-                      ButtonSegment(value: 'de', label: Text('Deutsch')),
-                    ],
-                    selected: {Store.callerLang},
-                    onSelectionChanged: (v) {
-                      setState(() => Store.callerLang = v.first);
-                      Caller.test();
-                    },
-                    style: segStyle(),
-                  ),
-                ),
-              ),
-            if (Store.caller) _voicePicker(),
+            _switch(Icons.record_voice_over_rounded, 'Ansagen (Sounds)',
+                '80–180, Bullseye, „1“ und „You win“ – bei verbundener Anzeige spielt nur die Anzeige',
+                Store.announce, (v) => setState(() => Store.announce = v)),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
               child: Column(
@@ -356,56 +332,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     setState(() => Store.roomCode = v);
     _snack('Raum-Code ist jetzt $v. Er gilt ab dem nächsten geöffneten Raum.');
-  }
-
-  Future<List<CallerVoice>>? _voices;
-  String? _voicesLang;
-
-  /// Auswahl der Caller-Stimme (Männerstimmen zuerst) mit Probe-Knopf.
-  Widget _voicePicker() {
-    final lang = Store.callerLang;
-    if (_voicesLang != lang) {
-      _voicesLang = lang;
-      _voices = Caller.voices(lang);
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(62, 0, 6, 12),
-      child: FutureBuilder<List<CallerVoice>>(
-        future: _voices,
-        builder: (context, snap) {
-          final list = snap.data ?? const <CallerVoice>[];
-          var current = Store.callerVoice(lang);
-          if (!list.any((v) => v.name == current)) current = '';
-          return Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('voice-$lang-${list.length}'),
-                  initialValue: current,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Stimme', isDense: true),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('Automatisch (tiefe Männerstimme)')),
-                    for (final v in list) DropdownMenuItem(value: v.name, child: Text(v.label)),
-                  ],
-                  onChanged: (v) {
-                    setState(() => Store.setCallerVoice(lang, v ?? ''));
-                    Caller.test();
-                  },
-                ),
-              ),
-              IconButton(
-                tooltip: 'Probe anhören',
-                icon: const Icon(Icons.play_circle_fill_rounded),
-                color: C.accent,
-                iconSize: 32,
-                onPressed: Caller.test,
-              ),
-            ],
-          );
-        },
-      ),
-    );
   }
 
   Widget _group(List<Widget> children) => GlowCard(
