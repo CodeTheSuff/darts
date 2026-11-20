@@ -73,10 +73,18 @@ void main() {
       await _tapText(tester, 'Cricket');
       await tester.pumpAndSettle();
       await tester.tap(find.bySemanticsLabel('Starten'));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      // Ausbullen jetzt auch bei Minispielen
+      expect(find.text('Ausbullen'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Anna beginnt'));
       // Zielfelder pulsieren dauerhaft → feste Zeitschritte statt pumpAndSettle
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('Cricket'), findsWidgets);
+      // Bull 25 und Bull 50 als eigene Tasten
+      expect(find.byWidgetPredicate((w) => w is Key3 && w.semantics == '25'), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is Key3 && w.semantics == 'Bullseye 50'), findsOneWidget);
       await tester.tap(find.byWidgetPredicate((w) => w is Key3 && w.semantics == '20'));
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(seconds: 2));
@@ -93,6 +101,9 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
       await tester.tap(find.bySemanticsLabel('Starten'));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.bySemanticsLabel('Anna beginnt'));
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('ZIEL'), findsOneWidget); // Ziel steht nur noch im Hinweisbalken

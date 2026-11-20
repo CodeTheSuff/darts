@@ -245,8 +245,19 @@ class _KeypadState extends State<Keypad> {
     );
   }
 
+  /// Feste Bull-Taste (25 oder 50) – unabhängig von Double/Triple.
+  Widget _fixedBull(int mult, {double fontSize = 30}) => _pad(Key3(
+        semantics: mult == 2 ? 'Bullseye 50' : '25',
+        onTap: () => _hit(25, mult),
+        color: mult == 2 ? Color.alphaBlend(C.dbl.withValues(alpha: 0.10), C.surface2) : C.surface2,
+        borderColor: mult == 2 ? C.dbl.withValues(alpha: 0.35) : C.border,
+        child: Text(mult == 2 ? 'Bull 50' : 'Bull 25',
+            style: TextStyle(fontSize: fontSize * 0.75, fontWeight: FontWeight.w800)),
+      ));
+
   Widget _numbers() {
-    final nums = widget.spec.numbers;
+    // Bull erscheint als zwei feste Tasten: Bull 25 und Bull 50 (Index 50 = Bull 50).
+    final nums = [for (final n in widget.spec.numbers) ...(n == 25 ? const [25, 50] : [n])];
     final rows = <List<int>>[];
     for (var i = 0; i < nums.length; i += 4) {
       rows.add(nums.sublist(i, (i + 4).clamp(0, nums.length)));
@@ -261,7 +272,12 @@ class _KeypadState extends State<Keypad> {
               for (final r in rows)
                 Expanded(
                   child: Row(children: [
-                    for (final n in r) _numKey(n, fontSize: 30),
+                    for (final n in r)
+                      n == 25
+                          ? _fixedBull(1)
+                          : n == 50
+                              ? _fixedBull(2)
+                              : _numKey(n, fontSize: 30),
                     for (var k = r.length; k < 4; k++) const Expanded(child: SizedBox()),
                   ]),
                 ),

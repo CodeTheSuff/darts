@@ -199,7 +199,7 @@ class _SetupScreenState extends State<SetupScreen> {
     Store.saveOptions(mode.id, _opts);
 
     var start = 0;
-    if (_isX01 && players.length > 1) {
+    if (players.length > 1) {
       if (_hasBot) {
         start = Random().nextInt(players.length);
       } else {
