@@ -27,8 +27,8 @@ class _Bg extends CustomPainter {
 void main() {
   testWidgets('Icons erzeugen', (t) async {
     await render(t, 'assets/icon/icon.png', const DartsLogoPainter());
-    // Adaptive Icon: Motiv in der sicheren Zone (66 %), Hintergrund separat
-    await render(t, 'assets/icon/foreground.png', const DartsLogoPainter(background: false, scale: 0.62));
+    // Adaptive Icon: Motiv füllt fast die ganze sichtbare Fläche (66 %), Hintergrund separat
+    await render(t, 'assets/icon/foreground.png', const DartsLogoPainter(background: false, scale: 0.79));
     await render(t, 'assets/icon/background.png', _Bg());
     await render(t, 'assets/icon/splash.png', const DartsLogoPainter(background: false, scale: 0.9), size: 768);
   });
