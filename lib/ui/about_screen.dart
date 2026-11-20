@@ -9,10 +9,13 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.9.1';
+const appVersion = '2.9.2';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.9.2': [
+    (Icons.tv_rounded, 'Neuer Wartebildschirm der Anzeige', 'Schwarz mit leuchtendem Logo, bis am Handy ein Spiel oder Turnier startet'),
+  ],
   '2.9.1': [
     (Icons.speed_rounded, 'Flüssigeres Scrollen', 'Statistik-Seiten mit Trefferbildern ruckeln nicht mehr'),
   ],

@@ -16,9 +16,9 @@ import '../games/tournament.dart';
 import '../models/dart.dart';
 import '../net/link.dart';
 import 'board_grid.dart';
+import 'display_waiting.dart';
 import 'celebration.dart';
 import 'link_coordinator.dart';
-import 'logo.dart';
 import 'stats_table.dart';
 import 'theme.dart';
 import 'tournament_display.dart';
@@ -59,10 +59,7 @@ class _Board {
   bool matchStats = false;
 }
 
-class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerProviderStateMixin {
-  /// Sanftes Pulsieren des Logos im Wartebildschirm.
-  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
-    ..repeat(reverse: true);
+class _ScoreboardScreenState extends State<ScoreboardScreen> {
 
   MatchReport? _report(MatchController c) =>
       MatchReport.build(config: c.config, players: c.players, startIndex: c.startIndex, seed: c.seed, darts: c.darts);
@@ -87,7 +84,6 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   void dispose() {
     LinkCoordinator.viewerState.removeListener(_onState);
     Callouts.isDisplay = false;
-    _pulse.dispose();
     for (final b in _boards.values) {
       b.sub?.cancel();
     }
@@ -430,112 +426,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   }
 
   /// Wartebildschirm: großes, pulsierendes Logo, Status der Verbindung.
-  Widget _waiting() => LayoutBuilder(
-    builder: (context, box) {
-      final k = (min(box.maxWidth, box.maxHeight) / 680).clamp(0.6, 1.7);
-      final connected = Link.I.isConnected;
-      final statusColor = connected ? C.dbl : const Color(0xFFFFB347);
-      return Stack(
-        children: [
-          // Blauer Verlauf wie im Logo mit Lichtschein
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0, -0.35),
-                  radius: 1.1,
-                  colors: [
-                    const Color(0xFF1F6FE5).withValues(alpha: 0.38),
-                    const Color(0xFF0A2A6B).withValues(alpha: 0.25),
-                    C.bg,
-                  ],
-                  stops: const [0, 0.45, 1],
-                ),
-              ),
-            ),
-          ),
-          Center(
-            child: Padding(
-              padding: EdgeInsets.all(24 * k),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedBuilder(
-                    animation: _pulse,
-                    builder: (_, child) {
-                      final t = Curves.easeInOut.transform(_pulse.value);
-                      return Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(60 * k),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF39A6FF).withValues(alpha: 0.25 + 0.25 * t),
-                              blurRadius: 40 * k + 30 * k * t,
-                              spreadRadius: 4 * k * t,
-                            ),
-                          ],
-                        ),
-                        child: Transform.scale(scale: 1 + 0.035 * t, child: child),
-                      );
-                    },
-                    child: DartsLogo(size: 230 * k, radius: 60 * k),
-                  ),
-                  SizedBox(height: 40 * k),
-                  Text(
-                    'Warte auf Spielstart …',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 52 * k, fontWeight: FontWeight.w800, letterSpacing: 0.5),
-                  ),
-                  SizedBox(height: 16 * k),
-                  AnimatedBuilder(
-                    animation: Link.I,
-                    builder: (_, _) => Container(
-                      padding: EdgeInsets.symmetric(horizontal: 22 * k, vertical: 10 * k),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(color: statusColor.withValues(alpha: 0.5)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 14 * k,
-                            height: 14 * k,
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: statusColor.withValues(alpha: 0.7), blurRadius: 10 * k)],
-                            ),
-                          ),
-                          SizedBox(width: 12 * k),
-                          Flexible(
-                            child: Text(
-                              Link.I.isConnected
-                                  ? 'Verbunden mit ${Link.I.hostName ?? 'Host'}'
-                                  : (Link.I.status.isEmpty ? 'Nicht verbunden' : Link.I.status),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 24 * k, fontWeight: FontWeight.w700, color: statusColor),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 48 * k),
-                  Text(
-                    'Starte am Handy ein Spiel oder Turnier',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 20 * k, color: C.muted),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    },
-  );
+  Widget _waiting() => const DisplayWaiting();
 }
 
 /// „Als Nächstes“ im Turnier: das nächste spielbare Match (ohne die gerade laufenden).
