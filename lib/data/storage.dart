@@ -547,6 +547,10 @@ class Store {
       _p.setString('opts_$modeId', jsonEncode(o));
 
   // ---------------- Laufendes Match ----------------
+  /// Anzeige: welche Scheibe gezeigt wird (0 = alle laufenden Spiele).
+  static int get viewerBoard => _p.getInt('viewerBoard') ?? 0;
+  static set viewerBoard(int v) => _p.setInt('viewerBoard', v);
+
   /// Letzte Kopplung (Raum offen bzw. verbunden) mit Zeitstempel `ts` (ms) –
   /// für die automatische Wiederherstellung nach Absturz/Neustart.
   static Map<String, dynamic>? get linkSession {
