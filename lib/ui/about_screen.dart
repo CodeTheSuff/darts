@@ -17,6 +17,7 @@ const changelog = <String, List<(IconData, String, String)>>{
     (Icons.record_voice_over_rounded, 'Eigene Ansagen', '80–180, Bullseye, „1“ und „You win“ mit deinen Sounds – die Computerstimme ist entfernt'),
     (Icons.celebration_rounded, 'Feuerwerk bei 180', 'Großes Feuerwerk, die 180 bleibt 3 Sekunden länger stehen'),
     (Icons.timer_rounded, 'Längere Animationen', 'Alle Jubel-Animationen bleiben eine Sekunde länger'),
+    (Icons.auto_awesome_rounded, 'Neues Logo', 'Senkrechter Pfeil zwischen zwei Halbkreisen'),
   ],
   '2.6.0': [
     (Icons.leaderboard_rounded, 'Leg-Statistik', 'Nach jedem Leg: Average, First 9, Checkout, hohe Aufnahmen im Vergleich'),

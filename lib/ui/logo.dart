@@ -43,8 +43,9 @@ void paintLogoBackground(Canvas canvas, Size size) {
   canvas.restore();
 }
 
-/// Das App-Logo: weißer Ring mit rotem Bull und ein Pfeil, der ins Bull trifft –
-/// mit weichen Schatten. Gezeichnet auf einer 512er-Fläche und auf [size] skaliert.
+/// Das App-Logo: senkrechter Pfeil in der Mitte (Flight oben, Spitze unten), umgeben von
+/// einem dicken weißen Ring, der oben und unten am Pfeil offen ist – links und rechts
+/// bleiben zwei Halbkreise. Gezeichnet auf einer 512er-Fläche und auf [size] skaliert.
 class DartsLogoPainter extends CustomPainter {
   const DartsLogoPainter({this.background = true, this.scale = 1.0});
 
@@ -54,9 +55,15 @@ class DartsLogoPainter extends CustomPainter {
   /// Verkleinert das Motiv um die Mitte (für adaptive Icons mit Sicherheitszone).
   final double scale;
 
-  // Scheibe groß und nach links unten in die Ecke gerückt, Pfeil mit viel Platz nach rechts oben.
-  static const _c = Offset(212, 302);
-  static const _ringR = 166.0;
+  static const _c = Offset(256, 256);
+
+  /// Pfeil und Ring nehmen 80 % der Fläche ein.
+  static const _len = 512 * 0.8;
+  static const _stroke = 44.0;
+  static const _ringR = _len / 2 - _stroke / 2;
+
+  /// Halber Öffnungswinkel oben und unten (Flight-Breite plus Luft und runde Enden).
+  static final _gap = asin(86 / _ringR);
 
   /// Zeichnet [draw] als weichen Schatten (versetzt, unscharf, halbtransparent).
   static void _shadow(Canvas canvas, Offset off, double blur, Color color, void Function(Paint solid) draw) {
@@ -74,41 +81,28 @@ class DartsLogoPainter extends CustomPainter {
   static void _ring(Canvas canvas, Paint? solid) {
     final ring = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 44;
+      ..strokeWidth = _stroke
+      ..strokeCap = StrokeCap.round;
     if (solid != null) {
       ring
         ..color = solid.color
         ..maskFilter = solid.maskFilter;
-      canvas.drawCircle(_c, _ringR, ring);
-      canvas.drawCircle(_c, 44, solid);
-      return;
+    } else {
+      ring.shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Colors.white, Color(0xFFDCEBFF)],
+      ).createShader(Rect.fromCircle(center: _c, radius: _ringR + _stroke / 2));
     }
-    ring.shader = const LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [Colors.white, Color(0xFFDCEBFF)],
-    ).createShader(Rect.fromCircle(center: _c, radius: _ringR + 22));
-    canvas.drawCircle(_c, _ringR, ring);
-    canvas.drawCircle(_c, 44, Paint()..color = Colors.white);
-    canvas.drawCircle(
-      _c,
-      30,
-      Paint()
-        ..shader = const RadialGradient(
-          center: Alignment(-0.2, -0.3),
-          radius: 0.7,
-          colors: [Color(0xFFFF7A5C), Color(0xFFE2361C)],
-        ).createShader(Rect.fromCircle(center: _c, radius: 30)),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(center: _c + const Offset(-8, -9), width: 20, height: 13),
-      Paint()..color = Colors.white.withValues(alpha: 0.5),
-    );
+    final rect = Rect.fromCircle(center: _c, radius: _ringR);
+    final sweep = pi - 2 * _gap;
+    canvas.drawArc(rect, -pi / 2 + _gap, sweep, false, ring); // rechte Hälfte
+    canvas.drawArc(rect, pi / 2 + _gap, sweep, false, ring); // linke Hälfte
   }
 
-  /// Pfeil mit Spitze im Ursprung, zeigt nach oben. [solid] = einfarbig (für den Schatten).
+  /// Pfeil mit Spitze im Ursprung, der Körper reicht nach oben. [solid] = einfarbig (für den Schatten).
   static void _dart(Canvas canvas, Paint? solid) {
-    const len = 330.0;
+    const len = _len;
     const w = len / 330;
     Paint fill(Color c) => solid ?? (Paint()..color = c);
     RRect rr(double x, double y, double wd, double h, double r) =>
@@ -157,8 +151,7 @@ class DartsLogoPainter extends CustomPainter {
 
   static void _placeDart(Canvas canvas, void Function() draw) {
     canvas.save();
-    canvas.translate(_c.dx + 6, _c.dy - 6);
-    canvas.rotate(42 * pi / 180);
+    canvas.translate(_c.dx, _c.dy + _len / 2); // Spitze unten, Flight oben
     draw();
     canvas.restore();
   }
@@ -173,20 +166,9 @@ class DartsLogoPainter extends CustomPainter {
     canvas.scale(scale);
     canvas.translate(-256, -256);
 
-    // feiner äußerer Ring
-    canvas.drawCircle(
-      _c,
-      _ringR + 48,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 10
-        ..color = Colors.white.withValues(alpha: 0.12),
-    );
-    // Ring + Bull mit weichem Schatten
     _shadow(canvas, const Offset(0, 12), 14, const Color(0xFF002A75).withValues(alpha: 0.45), (p) => _ring(canvas, p));
     _ring(canvas, null);
-    // Pfeil mit Schatten auf Ring und Hintergrund
-    _shadow(canvas, const Offset(10, 16), 9, const Color(0xFF002060).withValues(alpha: 0.45),
+    _shadow(canvas, const Offset(8, 12), 9, const Color(0xFF002060).withValues(alpha: 0.45),
         (p) => _placeDart(canvas, () => _dart(canvas, p)));
     _placeDart(canvas, () => _dart(canvas, null));
     canvas.restore();
