@@ -9,10 +9,13 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.9.0';
+const appVersion = '2.9.1';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.9.1': [
+    (Icons.speed_rounded, 'Flüssigeres Scrollen', 'Statistik-Seiten mit Trefferbildern ruckeln nicht mehr'),
+  ],
   '2.9.0': [
     (Icons.menu_book_rounded, 'Großes Tutorial', 'Jede Funktion ausführlich erklärt – in den Einstellungen unter „Tutorial“'),
     (Icons.school_rounded, 'Einführung aktualisiert', 'Der kurze Rundgang zeigt am Ende, wo das große Tutorial ist'),

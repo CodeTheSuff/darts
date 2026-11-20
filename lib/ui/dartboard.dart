@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -82,8 +83,80 @@ class _DartboardState extends State<Dartboard> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // ---------------------------------------------------------------- Standbild
+  //
+  // Impeller merkt sich gezeichnete Ebenen nicht als Bild: Jede Scheibe mit ihren vielen
+  // Unschärfe-Effekten würde beim Scrollen in jedem Bild neu berechnet (Ruckeln bei mehreren
+  // Trefferbildern). Ruhende Scheiben (ohne Darts, Ziele und Animation) werden daher einmal
+  // in ein Bild gerendert und nur noch dieses gezeichnet.
+
+  static final _cache = <String, ui.Image>{}; // Einfügereihenfolge = zuletzt benutzt hinten
+  static const _cacheMax = 24;
+
+  ui.Image? _still;
+  String? _stillKey;
+
+  bool get _isStatic => widget.darts.isEmpty && widget.targets.isEmpty;
+
+  String _keyFor(double dpr) {
+    final h = widget.heat;
+    final heat = h == null ? '' : (h.entries.map((e) => '${e.key}:${e.value}').toList()..sort()).join(',');
+    return '${widget.size}|$dpr|${widget.color.toARGB32()}|${widget.showNumbers}|${widget.showCounts}|$heat';
+  }
+
+  DartboardPainter _painter() => DartboardPainter(
+        darts: widget.darts,
+        color: widget.color,
+        targets: widget.targets,
+        heat: widget.heat,
+        enterT: Curves.easeOutBack.transform(_enter.value.clamp(0, 1)),
+        pulse: Curves.easeInOut.transform(_pulse.value),
+        showNumbers: widget.showNumbers,
+        showCounts: widget.showCounts,
+      );
+
+  /// Liefert das fertige Standbild oder stößt das Rendern an (bis dahin wird live gezeichnet).
+  ui.Image? _stillImage(double dpr) {
+    final key = _keyFor(dpr);
+    if (_stillKey == key && _still != null) return _still;
+    final hit = _cache.remove(key);
+    if (hit != null) {
+      _cache[key] = hit; // zuletzt benutzt ans Ende
+      _still = hit;
+      _stillKey = key;
+      return hit;
+    }
+    if (_stillKey != key) {
+      _stillKey = key;
+      _still = null;
+      final painter = _painter();
+      final px = (widget.size * dpr).ceil();
+      if (px <= 0) return null;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final rec = ui.PictureRecorder();
+        final canvas = Canvas(rec);
+        canvas.scale(dpr);
+        painter.paint(canvas, Size.square(widget.size));
+        final img = await rec.endRecording().toImage(px, px);
+        _cache[key] = img;
+        while (_cache.length > _cacheMax) {
+          _cache.remove(_cache.keys.first);
+        }
+        if (mounted && _stillKey == key) setState(() => _still = img);
+      });
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isStatic) {
+      final img = _stillImage(MediaQuery.devicePixelRatioOf(context));
+      if (img != null) {
+        return RawImage(image: img, width: widget.size, height: widget.size, filterQuality: FilterQuality.medium);
+      }
+      return RepaintBoundary(child: CustomPaint(size: Size.square(widget.size), painter: _painter()));
+    }
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: Listenable.merge([_enter, _pulse]),
