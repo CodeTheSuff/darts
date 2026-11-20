@@ -165,7 +165,7 @@ class MatchShareCard extends StatelessWidget {
               top: -70,
               child: Opacity(
                 opacity: 0.07,
-                child: CustomPaint(size: const Size.square(300), painter: const DartsLogoPainter(background: false)),
+                child: const DartsMark(size: 300),
               ),
             ),
             Padding(

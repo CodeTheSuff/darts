@@ -68,6 +68,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/callouts/
+    - assets/logo/
     - assets/fonts/OFL.txt
   fonts:
     - family: Barlow
@@ -125,16 +126,16 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/icon/icon.png"
-  adaptive_icon_background: "assets/icon/background.png"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/foreground.png"
   min_sdk_android: 21
 
 flutter_native_splash:
-  color: "#1366E0"
+  color: "#FFFFFF"
   image: "assets/icon/splash.png"
   android_12:
-    color: "#1366E0"
+    color: "#FFFFFF"
     image: "assets/icon/splash.png"
-    icon_background_color: "#1366E0"
+    icon_background_color: "#FFFFFF"
   ios: false
   web: false
