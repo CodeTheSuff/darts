@@ -20,7 +20,7 @@ import 'link_coordinator.dart';
 import 'logo.dart';
 import 'stats_table.dart';
 import 'theme.dart';
-import 'tournament_screens.dart';
+import 'tournament_display.dart';
 
 /// Reine Anzeige für ein gekoppeltes Gerät (z. B. Tablet an der Wand neben dem Board):
 /// riesige Restpunkte, die drei Pfeile der Aufnahme, Jubel-Animationen und
@@ -206,7 +206,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
           ? _BoardStats(engine: c.engine, report: r, leg: _boardMatch ? null : _boardLeg)
           : _MatchBoard(engine: c.engine, next: next);
     } else if (t != null) {
-      body = _TournamentBoard(t: t, next: next);
+      body = TournamentDisplay(t: t, exceptMatch: c?.tournamentMatchId);
     } else {
       body = _waiting();
     }
@@ -961,68 +961,3 @@ class _MatchBoard extends StatelessWidget {
   );
 }
 
-class _TournamentBoard extends StatelessWidget {
-  const _TournamentBoard({required this.t, this.next});
-  final Tournament t;
-  final String? next;
-
-  @override
-  Widget build(BuildContext context) {
-    final table = t.system == TSystem.league;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            t.name,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
-          ),
-          Text(
-            '${t.system.label} · ${t.playedCount}/${t.realCount} Matches',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: C.muted, fontSize: 15),
-          ),
-          if (next != null) Center(child: nextUpBar(next!, 1.2)),
-          const SizedBox(height: 8),
-          Expanded(
-            child: table
-                ? ListView(
-                    children: [
-                      for (final (i, s) in t.standings().indexed)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(14)),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 40,
-                                child: Text(
-                                  '${i + 1}.',
-                                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: medalColor(i + 1)),
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  t.players[s.player].name,
-                                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                              Text(
-                                '${s.wins} S · ${s.legsFor}:${s.legsAgainst}',
-                                style: TextStyle(fontSize: 18, color: C.muted2, fontFeatures: tabular),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  )
-                : BracketView(t: t, onTap: (_) {}),
-          ),
-        ],
-      ),
-    );
-  }
-}

@@ -1231,9 +1231,12 @@ String slotName(Tournament t, TMatch m, int side) {
 // =================================================================== Baum
 
 class BracketView extends StatelessWidget {
-  const BracketView({super.key, required this.t, required this.onTap});
+  const BracketView({super.key, required this.t, required this.onTap, this.fill = false});
   final Tournament t;
   final void Function(TMatch m) onTap;
+
+  /// Anzeige: ganzer Baum auf die verfügbare Fläche skaliert (ohne Zoomen/Schieben).
+  final bool fill;
 
   static const _w = 176.0;
   static const _h = 62.0;
@@ -1248,12 +1251,17 @@ class BracketView extends StatelessWidget {
       if (t.matches.any((m) => m.bracket == 'P3'))
         ('Spiel um Platz 3', t.matches.where((m) => m.bracket == 'P3').toList()),
     ];
-    return InteractiveViewer(
-      constrained: false,
-      minScale: 0.4,
-      maxScale: 2,
-      boundaryMargin: const EdgeInsets.all(80),
-      child: Padding(
+    Widget wrap(Widget child) => fill
+        ? FittedBox(fit: BoxFit.contain, child: child)
+        : InteractiveViewer(
+            constrained: false,
+            minScale: 0.4,
+            maxScale: 2,
+            boundaryMargin: const EdgeInsets.all(80),
+            child: child,
+          );
+    return wrap(
+      Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
