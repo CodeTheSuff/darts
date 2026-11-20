@@ -15,6 +15,7 @@ import '../games/x01.dart';
 import '../games/tournament.dart';
 import '../models/dart.dart';
 import '../net/link.dart';
+import 'board_grid.dart';
 import 'celebration.dart';
 import 'link_coordinator.dart';
 import 'logo.dart';
@@ -32,9 +33,11 @@ class ScoreboardScreen extends StatefulWidget {
   State<ScoreboardScreen> createState() => _ScoreboardScreenState();
 }
 
-/// Eine anstehende Jubel-Animation.
+/// Eine anstehende Jubel-Animation (mit Spiel, damit Namen/Farben passen).
 class _Show {
-  _Show(this.kind, this.player, this.darts, this.value, this.label);
+  _Show(this.board, this.engine, this.kind, this.player, this.darts, this.value, this.label);
+  final _Board board;
+  final GameEngine engine;
   final CelebrationKind kind;
   final int player;
   final List<Dart> darts;
@@ -42,11 +45,21 @@ class _Show {
   final String? label;
 }
 
-class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerProviderStateMixin {
-  /// Leg-Statistik bis zum ersten Dart des nächsten Legs, Match-Statistik bis zum nächsten Match.
-  LegReport? _boardLeg;
-  bool _boardMatch = false;
+/// Ein laufendes Spiel auf der Anzeige („Scheibe“). Ohne `boards` vom Host gibt es
+/// genau eines mit n = 0 (das Match des Host-Geräts).
+class _Board {
+  _Board(this.n, this.name, this.ctl);
+  int n;
+  String name;
+  final MatchController ctl;
+  StreamSubscription<ThrowEvent>? sub;
 
+  /// Leg-Statistik bis zum ersten Dart des nächsten Legs, Match-Statistik bis zum nächsten Match.
+  LegReport? leg;
+  bool matchStats = false;
+}
+
+class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerProviderStateMixin {
   /// Sanftes Pulsieren des Logos im Wartebildschirm.
   late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
     ..repeat(reverse: true);
@@ -54,8 +67,8 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   MatchReport? _report(MatchController c) =>
       MatchReport.build(config: c.config, players: c.players, startIndex: c.startIndex, seed: c.seed, darts: c.darts);
 
-  MatchController? _ctl;
-  StreamSubscription<ThrowEvent>? _sub;
+  /// Laufende Spiele nach Scheiben-Nummer (aufsteigend).
+  var _boards = <int, _Board>{};
   final _queue = <_Show>[];
   _Show? _show;
 
@@ -75,53 +88,110 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
     LinkCoordinator.viewerState.removeListener(_onState);
     Callouts.isDisplay = false;
     _pulse.dispose();
-    _sub?.cancel();
+    for (final b in _boards.values) {
+      b.sub?.cancel();
+    }
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WakelockPlus.disable().catchError((_) {});
     super.dispose();
   }
 
-  /// Neuer Stand vom Host: laufendes Match fortschreiben (dabei entstehen
-  /// Wurf-Ereignisse für die Animationen) oder neu aufbauen.
+  /// Neuer Stand vom Host: laufende Spiele fortschreiben (dabei entstehen
+  /// Wurf-Ereignisse für Ansagen und Animationen) oder neu aufbauen.
+  /// Liefert der Host `boards`, gelten nur diese, sonst das eine `match`.
   void _onState({bool rebuild = true}) {
-    final mj = LinkCoordinator.viewerState.value?['match'];
-    if (mj is! Map) {
-      if (_ctl != null) _setCtl(null);
+    final st = LinkCoordinator.viewerState.value;
+    final incoming = <(int, String, Map<String, dynamic>)>[];
+    final raw = st?['boards'];
+    if (raw is List && raw.isNotEmpty) {
+      for (final b in raw) {
+        if (b is! Map) continue;
+        final n = b['n'];
+        final mj = b['match'];
+        if (n is! num || mj is! Map) continue;
+        final name = b['name'];
+        incoming.add((
+          n.toInt(),
+          name is String && name.isNotEmpty ? name : 'Scheibe ${n.toInt()}',
+          Map<String, dynamic>.from(mj),
+        ));
+      }
+      incoming.sort((a, b) => a.$1.compareTo(b.$1));
     } else {
-      final j = Map<String, dynamic>.from(mj);
-      final cur = _ctl;
-      if (cur != null && cur.matchId == j['mid']) {
+      final mj = st?['match'];
+      if (mj is Map) incoming.add((0, '', Map<String, dynamic>.from(mj)));
+    }
+    // Vorhandene Controller per matchId wiederverwenden (auch wenn sich die Nummer ändert).
+    final old = {for (final b in _boards.values) b.ctl.matchId: b};
+    final next = <int, _Board>{};
+    for (final (n, name, j) in incoming) {
+      if (next.containsKey(n)) continue;
+      final cur = old.remove(j['mid']);
+      if (cur != null) {
+        cur
+          ..n = n
+          ..name = name;
+        next[n] = cur;
         try {
-          cur.applyRemote([for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))]);
+          cur.ctl.applyRemote([for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))]);
         } catch (_) {}
       } else {
-        _setCtl(MatchController.fromJson(j));
+        MatchController? c;
+        try {
+          c = MatchController.fromJson(j);
+        } catch (_) {}
+        if (c != null) next[n] = _newBoard(n, name, c);
       }
     }
+    // Verschwundene bzw. ersetzte Spiele aufräumen (samt ihrer ausstehenden Jubel).
+    for (final b in old.values) {
+      b.sub?.cancel();
+      _queue.removeWhere((s) => s.board == b);
+      if (_show?.board == b) _show = null;
+    }
+    _boards = next;
     if (rebuild && mounted) setState(() {});
+    if (rebuild) _next();
   }
 
-  void _setCtl(MatchController? c) {
-    _sub?.cancel();
-    _sub = null;
-    _queue.clear();
-    _show = null;
-    _ctl = c;
-    _boardLeg = null;
+  _Board _newBoard(int n, String name, MatchController c) {
+    final b = _Board(n, name, c);
     // Schon beendetes Match (z. B. Anzeige später verbunden): gleich die Statistik
-    _boardMatch = c != null && c.engine.finished && c.engine is X01Game;
-    if (c != null) _sub = c.externalEvents.listen(_onEvent);
+    b.matchStats = c.engine.finished && c.engine is X01Game;
+    b.sub = c.externalEvents.listen((ev) => _onEvent(b, ev));
+    return b;
   }
 
-  void _onEvent(ThrowEvent ev) {
-    final e = _ctl?.engine;
-    if (e == null || ev.control) return;
-    Callouts.onThrow(ev, e);
+  /// Allein gezeigte Scheibe; null = alle (geteilter Bildschirm) bzw. keine.
+  /// Eine gewählte Scheibe, die es nicht (mehr) gibt, zählt als „Alle“.
+  _Board? get _single {
+    if (_boards.length == 1) return _boards.values.first;
+    final sel = Store.viewerBoard;
+    return sel == 0 ? null : _boards[sel];
+  }
+
+  /// Ansagen und Jubel nur für sichtbare Spiele.
+  bool _visible(_Board b) {
+    final s = _single;
+    return s == null || identical(s, b);
+  }
+
+  void _select(int n) {
+    Store.viewerBoard = n;
+    _queue.removeWhere((s) => !_visible(s.board));
+    setState(() {});
+  }
+
+  void _onEvent(_Board b, ThrowEvent ev) {
+    if (!identical(_boards[b.n], b) || ev.control) return;
+    final e = b.ctl.engine;
+    final visible = _visible(b);
+    if (visible) Callouts.onThrow(ev, e);
     // Der erste Dart des nächsten Legs (bzw. beim Weiterspielen) schließt die Statistik.
-    if (_boardLeg != null || _boardMatch) {
-      _boardLeg = null;
-      _boardMatch = false;
+    if (b.leg != null || b.matchStats) {
+      b.leg = null;
+      b.matchStats = false;
       if (mounted) setState(() {});
     }
     if (!ev.turnEnded) return;
@@ -129,26 +199,28 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
       final kind = ev.celebration == null ? null : kindOf(ev.celebration!);
       final legOver = kind == CelebrationKind.legWon || kind == CelebrationKind.highFinish;
       if (ev.gameOver) {
-        _boardMatch = true;
+        b.matchStats = true;
       } else if (legOver) {
-        _boardLeg = _report(_ctl!)?.lastFinishedLeg;
+        b.leg = _report(b.ctl)?.lastFinishedLeg;
       }
       if (mounted) setState(() {});
     }
     // Caller-Ansage auch auf der Anzeige (wenn dort eingeschaltet)
-    if (!Store.celebrations) return;
+    if (!visible || !Store.celebrations) return;
     if (ev.celebration != null) {
       final kind = kindOf(ev.celebration!);
       if (!(kind == CelebrationKind.legWon && ev.gameOver)) {
         var label = ev.celebrationLabel;
         if (kind == CelebrationKind.legWon && e.legsToWin == null) label = 'GESCHAFFT!';
-        _queue.add(_Show(kind, ev.playerIndex, ev.turnDarts, ev.celebrationValue, label));
+        _queue.add(_Show(b, e, kind, ev.playerIndex, ev.turnDarts, ev.celebrationValue, label));
       }
     }
     if (ev.gameOver) {
       final w = e.results().first.playerIndex;
       _queue.add(
         _Show(
+          b,
+          e,
           CelebrationKind.match,
           w,
           w == ev.playerIndex ? ev.turnDarts : const [],
@@ -196,19 +268,41 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final tj = LinkCoordinator.viewerState.value?['tournament'];
-    final c = _ctl;
     final t = _tournament(tj);
-    final next = t == null ? null : nextMatchLabel(t, exceptMatch: c?.tournamentMatchId);
+    final multi = _boards.length >= 2;
+    final single = _single;
+    final next = t == null
+        ? null
+        : nextMatchLabel(t, except: [for (final b in _boards.values) b.ctl.tournamentMatchId]);
     Widget body;
-    if (c != null) {
-      final r = (_boardLeg != null || _boardMatch) ? _report(c) : null;
+    if (single != null) {
+      final c = single.ctl;
+      final label = multi ? single.name : null;
+      final r = (single.leg != null || single.matchStats) ? _report(c) : null;
       body = r != null
-          ? _BoardStats(engine: c.engine, report: r, leg: _boardMatch ? null : _boardLeg)
-          : _MatchBoard(engine: c.engine, next: next);
+          ? _BoardStats(engine: c.engine, report: r, leg: single.matchStats ? null : single.leg, board: label)
+          : _MatchBoard(engine: c.engine, next: next, board: label);
+    } else if (multi) {
+      body = Column(
+        children: [
+          if (next != null) nextUpBar(next, 0.9),
+          Expanded(
+            child: BoardGrid(boards: [for (final b in _boards.values) BoardEntry(b.name, b.ctl.engine)]),
+          ),
+        ],
+      );
     } else if (t != null) {
-      body = TournamentDisplay(t: t, exceptMatch: c?.tournamentMatchId);
+      body = TournamentDisplay(t: t);
     } else {
       body = _waiting();
+    }
+    if (multi) {
+      body = Column(
+        children: [
+          _boardBar(single),
+          Expanded(child: body),
+        ],
+      );
     }
     final show = _show;
     return Scaffold(
@@ -244,21 +338,92 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
                   ],
                 ),
               ),
-              if (show != null && c != null)
+              if (show != null) ...[
                 Positioned.fill(
                   child: CelebrationOverlay(
                     key: ObjectKey(show),
                     kind: show.kind,
-                    name: c.engine.players[show.player].name,
-                    color: Color(c.engine.players[show.player].color),
+                    name: show.engine.players[show.player].name,
+                    color: Color(show.engine.players[show.player].color),
                     darts: show.darts,
                     value: show.value,
                     label: show.label,
                     onDone: _done,
                   ),
                 ),
+                // Bei mehreren Spielen: zu welcher Scheibe der Jubel gehört
+                if (multi)
+                  Positioned(
+                    top: 74,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: C.bg.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(color: C.accent.withValues(alpha: 0.7)),
+                          ),
+                          child: Text(
+                            show.board.name.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2,
+                              color: C.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Leiste zur Auswahl: „Alle“ oder eine Scheibe (groß genug zum Antippen am Tablet).
+  Widget _boardBar(_Board? single) {
+    // Handy: kompakter, damit „Alle“ und zwei Scheiben ohne Scrollen passen.
+    final narrow = MediaQuery.sizeOf(context).width < 600;
+    Widget chip(String text, int n, bool sel) => Padding(
+      padding: EdgeInsets.only(right: narrow ? 8 : 10),
+      child: Material(
+        key: ValueKey('board-chip-$n'),
+        color: sel ? C.accent : C.surface.withValues(alpha: 0.7),
+        shape: StadiumBorder(side: BorderSide(color: sel ? C.accent : C.border, width: 1.5)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _select(n),
+          child: Container(
+            constraints: BoxConstraints(minWidth: narrow ? 64 : 88, minHeight: 48),
+            padding: EdgeInsets.symmetric(horizontal: narrow ? 14 : 22),
+            alignment: Alignment.center,
+            child: Text(
+              text,
+              style: TextStyle(fontSize: narrow ? 17 : 20, fontWeight: FontWeight.w800, color: sel ? C.bg : C.text),
+            ),
+          ),
+        ),
+      ),
+    );
+    return Container(
+      height: 60,
+      // rechts Platz für „Mitspielen“ und „Anzeige beenden“
+      margin: EdgeInsets.only(right: Link.I.isClient ? 190 : 56),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        child: Row(
+          children: [
+            chip('Alle', 0, single == null),
+            for (final b in _boards.values) chip(b.name, b.n, identical(single, b)),
+          ],
         ),
       ),
     );
@@ -373,10 +538,11 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
   );
 }
 
-/// „Als Nächstes“ im Turnier: das nächste spielbare Match (ohne das gerade laufende).
-String? nextMatchLabel(Tournament t, {String? exceptMatch}) {
+/// „Als Nächstes“ im Turnier: das nächste spielbare Match (ohne die gerade laufenden).
+String? nextMatchLabel(Tournament t, {String? exceptMatch, Iterable<String?> except = const []}) {
+  final skip = {exceptMatch, ...except}..remove(null);
   for (final m in t.playable) {
-    if (m.id == exceptMatch) continue;
+    if (skip.contains(m.id)) continue;
     final (a, b) = t.participants(m);
     if (a == null || b == null) continue;
     return '${t.players[a].name} – ${t.players[b].name}';
@@ -416,9 +582,12 @@ Widget nextUpBar(String text, double k) => Container(
 
 /// Leg- bzw. Match-Statistik groß auf der Anzeige.
 class _BoardStats extends StatelessWidget {
-  const _BoardStats({required this.engine, required this.report, this.leg});
+  const _BoardStats({required this.engine, required this.report, this.leg, this.board});
   final GameEngine engine;
   final MatchReport report;
+
+  /// Bei mehreren Spielen: Name der Scheibe.
+  final String? board;
 
   /// null = Match-Statistik
   final LegReport? leg;
@@ -451,7 +620,7 @@ class _BoardStats extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              eyebrow,
+              board == null ? eyebrow : '${board!.toUpperCase()} · $eyebrow',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18 * k, fontWeight: FontWeight.w800, letterSpacing: 3, color: color),
             ),
@@ -501,8 +670,11 @@ class _BoardStats extends StatelessWidget {
 }
 
 class _MatchBoard extends StatelessWidget {
-  const _MatchBoard({required this.engine, this.next});
+  const _MatchBoard({required this.engine, this.next, this.board});
   final GameEngine engine;
+
+  /// Bei mehreren Spielen: kleiner Hinweis, welche Scheibe gezeigt wird.
+  final String? board;
 
   /// Turnier: nächste Paarung.
   final String? next;
@@ -534,6 +706,7 @@ class _MatchBoard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (board != null) ...[_pill(board!.toUpperCase(), C.muted, k: k), SizedBox(width: 12 * k)],
               Flexible(
                 child: Text(
                   so ? '${e.start} · DOUBLE OUT' : e.title.toUpperCase(),
