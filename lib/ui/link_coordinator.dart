@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../data/error_log.dart';
@@ -120,6 +121,7 @@ class LinkCoordinator {
     l.onShare = _onShare;
     l.onSync = _onSync;
     l.onJoinRequest = _askJoin;
+    l.onDirect = _onDirect;
     MatchController.onMatchCommitted = (_) => _scheduleSync();
     TournamentStore.changes.addListener(_scheduleSync);
     var wasConnected = false;
@@ -151,10 +153,209 @@ class LinkCoordinator {
     return _tourJson;
   }
 
-  static Map<String, dynamic> _hostState() => {
-        'match': hostMatch?.toJson(),
-        'tournament': _tournamentJson(),
-      };
+  static Map<String, dynamic> _hostState() {
+    _assignBoards();
+    final hm = hostMatch;
+    final boards = <Map<String, dynamic>>[
+      if (hm != null) {'n': hostBoard, 'name': 'Scheibe $hostBoard', 'match': hm.toJson()},
+      for (final b in _boardMatches.entries)
+        if (b.value['paused'] != true) {'n': b.key, 'name': 'Scheibe ${b.key}', 'match': b.value['match']},
+    ]..sort((a, b) => (a['n'] as int).compareTo(b['n'] as int));
+    return {
+      'match': hm?.toJson(),
+      'tournament': _tournamentJson(),
+      'boards': boards,
+      'boardOf': {Store.deviceId: hostBoard, ..._boardOfDevice},
+      'claims': claims,
+    };
+  }
+
+  // ---------------------------------------------------------------- Mehrere Scheiben (Turnier)
+
+  /// Scheiben-Nummer dieses Geräts als Host.
+  static int hostBoard = 1;
+
+  /// Host: Scheibe je Gast-Gerät.
+  static final Map<String, int> _boardOfDevice = {};
+
+  /// Host: Spiele der Gast-Scheiben (Nummer → {match, tmid, dev, paused, done}).
+  static final Map<int, Map<String, dynamic>> _boardMatches = {};
+
+  /// Gast: zuletzt vom Host gemeldete Zuordnungen.
+  static Map<String, int> _remoteBoardOf = {};
+  static Map<String, int> _remoteClaims = {};
+
+  /// Ändert sich, wenn Scheiben/Sperren sich ändern (für Turnier-Bildschirme).
+  static final boardsTick = ValueNotifier<int>(0);
+
+  /// Eigene Scheiben-Nummer (Host: [hostBoard], Gast: vom Host vergeben).
+  static int? get myBoard => Link.I.isHost ? hostBoard : _remoteBoardOf[Store.deviceId];
+
+  /// Turnierspiel-ID → Scheibe, auf der es gerade läuft (oder unterbrochen ist).
+  static Map<String, int> get claims {
+    if (!Link.I.isHost) return _remoteClaims;
+    final out = <String, int>{};
+    final hm = hostMatch;
+    if (hm != null && hm.isTournament && !hm.engine.finished) out[hm.tournamentMatchId!] = hostBoard;
+    for (final b in _boardMatches.entries) {
+      final tmid = b.value['tmid'] as String?;
+      if (tmid != null && b.value['done'] != true) out[tmid] = b.key;
+    }
+    return out;
+  }
+
+  /// Host: jedem eingabefähigen Gast eine freie Nummer geben (2, 3, …).
+  static void _assignBoards() {
+    for (final (dev, _) in Link.I.inputPeers) {
+      if (_boardOfDevice.containsKey(dev)) continue;
+      var n = 1;
+      while (n == hostBoard || _boardOfDevice.containsValue(n)) {
+        n++;
+      }
+      _boardOfDevice[dev] = n;
+    }
+  }
+
+  /// Nummer ändern (Host direkt, Gast fragt beim Host an).
+  static void requestBoardNumber(int n) {
+    if (Link.I.isHost) {
+      if (_boardOfDevice.containsValue(n)) {
+        _report('Scheibe $n ist schon vergeben.');
+        return;
+      }
+      hostBoard = n;
+      _boardsChanged();
+    } else {
+      Link.I.sendToHost({'t': 'boardNo', 'n': n});
+    }
+  }
+
+  static void _boardsChanged() {
+    boardsTick.value++;
+    Link.I.broadcastState();
+  }
+
+  /// Host: ein Turnierspiel freigeben (z. B. Gerät ausgefallen).
+  static void releaseClaim(String tmid) {
+    final e = _boardMatches.entries.where((x) => x.value['tmid'] == tmid).firstOrNull;
+    if (e == null) return;
+    _boardMatches.remove(e.key);
+    final dev = e.value['dev'] as String?;
+    if (dev != null) Link.I.sendToDevice(dev, {'t': 'direct', 'kind': 'boardReleased', 'tmid': tmid});
+    _boardsChanged();
+  }
+
+  static void _onBoardMessage(Map<String, dynamic> msg) {
+    final dev = msg['_dev'] as String? ?? '';
+    _assignBoards();
+    final n = _boardOfDevice[dev];
+    if (n == null) return;
+    if (msg['t'] == 'boardNo') {
+      final want = (msg['n'] as num?)?.toInt() ?? 0;
+      final taken = want == hostBoard || _boardOfDevice.entries.any((x) => x.value == want && x.key != dev);
+      if (want < 1 || want > 99 || taken) {
+        Link.I.sendToDevice(dev, {'t': 'direct', 'kind': 'boardNoTaken', 'n': want});
+        return;
+      }
+      _boardOfDevice[dev] = want;
+      final cur = _boardMatches.remove(n);
+      if (cur != null) _boardMatches[want] = cur;
+      _boardsChanged();
+      return;
+    }
+    final tmid = msg['tmid'] as String?;
+    final mj = msg['match'];
+    if (msg['closed'] == true) {
+      // Gast hat das Spiel verlassen: fertig → entfernen, sonst als unterbrochen gesperrt lassen.
+      final cur = _boardMatches[n];
+      if (cur != null) {
+        if (cur['done'] == true || tmid == null) {
+          _boardMatches.remove(n);
+        } else {
+          cur['paused'] = true;
+        }
+      }
+      _boardsChanged();
+      return;
+    }
+    if (mj is! Map) return;
+    if (tmid != null) {
+      final owner = claims[tmid];
+      final t = TournamentStore.byId(msg['tid'] as String? ?? '');
+      final tm = t?.matches.where((m) => m.id == tmid).firstOrNull;
+      final alreadyPlayed = tm != null && tm.played && _boardMatches[n]?['tmid'] != tmid;
+      if ((owner != null && owner != n) || alreadyPlayed) {
+        Link.I.sendToDevice(dev, {'t': 'direct', 'kind': 'boardDenied', 'tmid': tmid, 'by': owner});
+        return;
+      }
+    }
+    final j = Map<String, dynamic>.from(mj);
+    var done = false;
+    final c = MatchController.fromJson(j);
+    if (c != null && c.engine.finished) {
+      done = true;
+      // Ergebnis ins Turnier übernehmen (wird ignoriert, wenn schon eingetragen)
+      if (c.isTournament) TournamentStore.onMatchDone(c);
+    }
+    _boardMatches[n] = {'match': j, 'tmid': tmid, 'dev': dev, 'done': done};
+    _boardsChanged();
+  }
+
+  // ---------------------------------------------------------------- Gast: eigene Scheibe
+
+  /// Gast: selbst geführtes Turnierspiel (läuft auf diesem Gerät, der Host bekommt den Stand).
+  static MatchController? boardMatch;
+  static Route<void>? _boardRoute;
+
+  static void _sendBoard({bool closed = false}) {
+    final c = boardMatch;
+    if (c == null) return;
+    Link.I.sendToHost({
+      't': 'board',
+      'mid': c.matchId,
+      'tid': c.tournamentId,
+      'tmid': c.tournamentMatchId,
+      'match': c.toJson(),
+      if (closed) 'closed': true,
+    });
+  }
+
+  /// Gast: Turnierspiel auf dieser Scheibe starten bzw. fortsetzen.
+  static Future<void> playBoardMatch(MatchController c) async {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    boardMatch?.removeListener(_sendBoard);
+    boardMatch = c;
+    c.addListener(_sendBoard);
+    _sendBoard();
+    final route = MaterialPageRoute<void>(builder: (_) => GameScreen(controller: c));
+    _boardRoute = route;
+    await nav.push(route);
+  }
+
+  static void _onDirect(Map<String, dynamic> msg) {
+    final c = boardMatch;
+    switch (msg['kind']) {
+      case 'boardDenied' || 'boardReleased':
+        if (c == null || c.tournamentMatchId != msg['tmid']) return;
+        c.removeListener(_sendBoard);
+        boardMatch = null;
+        final r = _boardRoute;
+        if (r != null && r.isActive) navigatorKey.currentState?.removeRoute(r);
+        _boardRoute = null;
+        final a = Store.activeMatch;
+        if (a != null && a['mid'] == c.matchId) Store.activeMatch = null;
+        final by = msg['by'];
+        _report(msg['kind'] == 'boardReleased'
+            ? 'Das Spiel wurde am Turnier-Gerät freigegeben.'
+            : by != null
+                ? 'Dieses Spiel läuft schon auf Scheibe $by.'
+                : 'Dieses Spiel ist schon eingetragen.');
+      case 'boardNoTaken':
+        _report('Scheibe ${msg['n']} ist schon vergeben.');
+    }
+  }
+
 
   // ---------------------------------------------------------------- Bildschirme melden sich
 
@@ -171,6 +372,12 @@ class LinkCoordinator {
   }
 
   static void gameClosed(MatchController c) {
+    if (boardMatch == c) {
+      _sendBoard(closed: true);
+      c.removeListener(_sendBoard);
+      boardMatch = null;
+      _boardRoute = null;
+    }
     if (_syncPending) Timer(const Duration(milliseconds: 10), _scheduleSync);
     if (clientMatch == c) {
       clientMatch = null;
@@ -209,6 +416,8 @@ class LinkCoordinator {
 
   static void _onHostMessage(Map<String, dynamic> msg) {
     switch (msg['t']) {
+      case 'board' || 'boardNo':
+        _onBoardMessage(msg);
       case 'dart':
         final m = hostMatch;
         if (m == null || m.matchId != msg['mid']) return;
@@ -252,6 +461,18 @@ class LinkCoordinator {
 
   static void _onState(Map<String, dynamic> state) {
     _lastState = state;
+    final bo = state['boardOf'];
+    final cl = state['claims'];
+    final newBoardOf = bo is Map ? {for (final e in bo.entries) '${e.key}': (e.value as num).toInt()} : <String, int>{};
+    final newClaims = cl is Map ? {for (final e in cl.entries) '${e.key}': (e.value as num).toInt()} : <String, int>{};
+    if (!mapEquals(newBoardOf, _remoteBoardOf) || !mapEquals(newClaims, _remoteClaims)) {
+      _remoteBoardOf = newBoardOf;
+      _remoteClaims = newClaims;
+      boardsTick.value++;
+    }
+    // Nach Neuverbindung den Stand der eigenen Scheibe erneut melden.
+    final bm = boardMatch;
+    if (bm != null && !bm.engine.finished && newClaims[bm.tournamentMatchId] == null) _sendBoard();
     if (viewer) {
       viewerState.value = state;
       _showBoard();
@@ -275,6 +496,12 @@ class LinkCoordinator {
       remoteTick.value++;
     }
 
+    // Spielt dieses Gerät selbst eine Scheibe, oder ist das Host-Match ein Turnierspiel
+    // (läuft auf der Scheibe des Hosts), wird es hier nicht automatisch geöffnet.
+    final hostTournamentMatch = mj is Map && mj['tmid'] != null;
+    if (mj is Map && (boardMatch != null || (hostTournamentMatch && clientMatch?.matchId != mj['mid']))) {
+      return;
+    }
     if (mj is Map) {
       final j = Map<String, dynamic>.from(mj);
       final cur = clientMatch;

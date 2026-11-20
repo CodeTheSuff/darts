@@ -3,12 +3,14 @@ import 'dart:math';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../data/match_controller.dart';
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../data/tournament_store.dart';
 import '../games/engine.dart';
 import '../games/tournament.dart';
 import '../models/player.dart';
+import '../net/link.dart';
 import 'bull_off.dart';
 import 'celebration.dart';
 import 'game_screen.dart';
@@ -716,9 +718,14 @@ class _TournamentScreenState extends State<TournamentScreen> {
     }
   }
 
+  void _onBoards() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    LinkCoordinator.boardsTick.addListener(_onBoards);
     if (widget.remote) {
       LinkCoordinator.remoteTick.addListener(_reload);
     } else {
@@ -731,6 +738,7 @@ class _TournamentScreenState extends State<TournamentScreen> {
 
   @override
   void dispose() {
+    LinkCoordinator.boardsTick.removeListener(_onBoards);
     if (widget.remote) {
       LinkCoordinator.remoteTick.removeListener(_reload);
     } else {
@@ -751,6 +759,34 @@ class _TournamentScreenState extends State<TournamentScreen> {
     }
   }
 
+  Future<void> _pickBoard() async {
+    final cur = LinkCoordinator.myBoard;
+    final n = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Diese Scheibe ist …'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 1; i <= 8; i++)
+                  ChoiceChip(
+                    label: Text('Scheibe $i'),
+                    selected: i == cur,
+                    onSelected: (_) => Navigator.pop(ctx, i),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (n != null && n != cur) LinkCoordinator.requestBoardNumber(n);
+  }
+
   List<(int, String)> get _views => [
     (0, 'Spiele'),
     if (t.system != TSystem.league) (1, 'Baum'),
@@ -758,16 +794,45 @@ class _TournamentScreenState extends State<TournamentScreen> {
   ];
 
   Future<void> _play(TMatch m) async {
+    final owner = LinkCoordinator.claims[m.id];
+    final mine = LinkCoordinator.myBoard;
     if (widget.remote) {
-      final (a, b) = t.participants(m);
-      final start = await showBullOff(context, [
-        GamePlayer(t.players[a!].profileId, t.players[a].name, C.players[0].toARGB32()),
-        GamePlayer(t.players[b!].profileId, t.players[b].name, C.players[1].toARGB32()),
-      ]);
-      if (start == null || !mounted) return;
-      final c = TournamentStore.controllerFor(t, m, start);
-      LinkCoordinator.startOnHost(c);
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => GameScreen(controller: c)));
+      if (owner != null && owner != mine) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Dieses Spiel läuft gerade auf Scheibe $owner.')));
+        return;
+      }
+      // Unterbrochenes Spiel dieser Scheibe fortsetzen
+      final a0 = Store.activeMatch;
+      var c = a0 != null && a0['tid'] == t.id && a0['tmid'] == m.id ? MatchController.fromJson(a0) : null;
+      if (c == null || c.engine.finished) {
+        final (a, b) = t.participants(m);
+        final start = await showBullOff(context, [
+          GamePlayer(t.players[a!].profileId, t.players[a].name, C.players[0].toARGB32()),
+          GamePlayer(t.players[b!].profileId, t.players[b].name, C.players[1].toARGB32()),
+        ]);
+        if (start == null || !mounted) return;
+        c = TournamentStore.controllerFor(t, m, start);
+      }
+      await LinkCoordinator.playBoardMatch(c);
+      return;
+    }
+    if (owner != null && owner != mine) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Läuft auf Scheibe $owner'),
+          content: const Text('Dieses Spiel wird gerade auf einer anderen Scheibe gespielt. '
+              'Freigeben, z. B. weil das Gerät ausgefallen ist? Der Stand dort geht dann verloren.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Freigeben')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      LinkCoordinator.releaseClaim(m.id);
       return;
     }
     var ctl = TournamentStore.activeFor(t, m.id);
@@ -863,6 +928,16 @@ class _TournamentScreenState extends State<TournamentScreen> {
           appBar: AppBar(
             title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             actions: [
+              if (Link.I.isConnected && LinkCoordinator.myBoard != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.adjust_rounded, size: 18),
+                    label: Text('Scheibe ${LinkCoordinator.myBoard}'),
+                    tooltip: 'Scheiben-Nummer ändern',
+                    onPressed: _pickBoard,
+                  ),
+                ),
               if (t.finished)
                 IconButton(
                   tooltip: 'Siegerpodest teilen',
@@ -973,7 +1048,10 @@ class _TournamentScreenState extends State<TournamentScreen> {
   }
 
   Widget _matchCard(TMatch m, {bool live = false}) {
-    final playable = t.isPlayable(m);
+    final board = m.played ? null : LinkCoordinator.claims[m.id];
+    final elsewhere = board != null && board != LinkCoordinator.myBoard;
+    live = live || (board != null && !elsewhere);
+    final playable = t.isPlayable(m) && !elsewhere;
     final f = t.formatOf(m.stage);
     Widget side(int s) {
       final won = m.played && m.winnerSide == s;
@@ -1028,6 +1106,18 @@ class _TournamentScreenState extends State<TournamentScreen> {
                 const SizedBox(height: 4),
                 side(0),
                 side(1),
+                if (board != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.radio_button_checked_rounded, size: 14, color: C.dbl),
+                        const SizedBox(width: 6),
+                        Text(elsewhere ? 'Läuft auf Scheibe $board' : 'Läuft auf deiner Scheibe $board',
+                            style: TextStyle(color: C.dbl, fontSize: 12, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
                 if (m.played && m.darts[0] + m.darts[1] > 0)
                   Text('Ø ${fmt1(m.avg(0))} : ${fmt1(m.avg(1))}', style: TextStyle(color: C.muted, fontSize: 12)),
               ],

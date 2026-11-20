@@ -71,6 +71,10 @@ class Link extends ChangeNotifier {
   @visibleForTesting
   factory Link.forTest() => Link._()..trustAll = true;
 
+  /// Tests: eigene Geräte-ID für mehrere simulierte Gäste in einem Prozess.
+  @visibleForTesting
+  String? deviceForTest;
+
   /// Test: jedes Gerät ohne Nachfrage erlauben.
   @visibleForTesting
   bool trustAll = false;
@@ -184,6 +188,22 @@ class Link extends ChangeNotifier {
 
   /// Host: Nachricht eines Gasts (dart, undo, start).
   void Function(Map<String, dynamic> msg)? onHostMessage;
+
+  /// Gast: Antwort des Hosts nur an dieses Gerät (z. B. Turnierspiel schon vergeben).
+  void Function(Map<String, dynamic> msg)? onDirect;
+
+  /// Host: eingabefähige Gäste (keine reinen Anzeigen) mit Geräte-ID und Name.
+  List<(String, String)> get inputPeers => [
+        for (final p in _approved)
+          if (!p.viewer && p.device.isNotEmpty) (p.device, p.name),
+      ];
+
+  /// Host: Nachricht nur an ein bestimmtes Gerät.
+  void sendToDevice(String device, Map<String, dynamic> msg) {
+    for (final p in _approved) {
+      if (p.device == device) _send(p.ws, msg);
+    }
+  }
 
   /// Gast: neuer Stand vom Host.
   void Function(Map<String, dynamic> state)? onState;
@@ -384,9 +404,9 @@ class Link extends ChangeNotifier {
       case 'mode':
         peer.viewer = msg['viewer'] == true;
         notifyListeners();
-      case 'dart' || 'undo' || 'start':
-        // Anzeige-Geräte dürfen nichts eintragen.
-        if (!peer.viewer) onHostMessage?.call(msg);
+      case 'dart' || 'undo' || 'start' || 'board' || 'boardNo':
+        // Anzeige-Geräte dürfen nichts eintragen. Absender mitgeben (Scheiben-Zuordnung).
+        if (!peer.viewer) onHostMessage?.call({...msg, '_dev': peer.device, '_name': peer.name});
       case 'share':
         // an die anderen Gäste weiterreichen und selbst anzeigen
         for (final p in _approved) {
@@ -542,7 +562,7 @@ class Link extends ChangeNotifier {
       _nonce = randomHex(16);
       _send(ws, {
         't': 'hello',
-        'device': Store.deviceId,
+        'device': deviceForTest ?? Store.deviceId,
         'name': Store.deviceName,
         'viewer': joinedAsViewer,
         if (_byKey) 'auth': true,
@@ -602,7 +622,7 @@ class Link extends ChangeNotifier {
           notifyListeners();
           return;
         }
-        sendToHost({'t': 'auth2', 'proof': authProof(key, 'guest', '${msg['nonce']}', Store.deviceId)});
+        sendToHost({'t': 'auth2', 'proof': authProof(key, 'guest', '${msg['nonce']}', deviceForTest ?? Store.deviceId)});
       case 'welcome':
         final hd = '${msg['hostDevice'] ?? ''}';
         final key = msg['key'] as String?;
@@ -669,6 +689,8 @@ class Link extends ChangeNotifier {
         onState?.call(msg);
       case 'share':
         onShare?.call(Map<String, dynamic>.from(msg['pkg'] as Map), msg['from'] as String? ?? 'Anderes Gerät');
+      case 'direct':
+        onDirect?.call(msg);
       case 'have' || 'syncpkg' || 'syncreq':
         onSync?.call(msg, sendToHost, hostName ?? 'Host');
     }
