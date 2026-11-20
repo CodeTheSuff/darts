@@ -5,13 +5,17 @@ import 'theme.dart';
 
 /// Ein Schritt der Einführung: hervorgehobene Stelle + kurzer Text.
 class CoachStep {
-  const CoachStep({required this.target, required this.title, required this.text, this.icon});
+  const CoachStep({required this.target, required this.title, required this.text, this.icon, this.actionLabel, this.onAction});
 
   /// Liefert die hervorzuhebende Fläche in globalen Koordinaten (oder null).
   final Rect? Function() target;
   final String title;
   final String text;
   final IconData? icon;
+
+  /// Zusätzlicher Knopf (z. B. „Jetzt ansehen“); daneben „Später“ beendet nur den Rundgang.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 }
 
 /// Rect eines Widgets mit [key] in globalen Koordinaten.
@@ -95,16 +99,22 @@ class _CoachOverlayState extends State<CoachOverlay> {
           const SizedBox(height: 8),
           Row(
             children: [
-              if (!last)
+              if (!last || step.actionLabel != null)
                 TextButton(
                   onPressed: widget.onDone,
-                  child: Text('Überspringen', style: TextStyle(color: C.muted)),
+                  child: Text(last ? 'Später' : 'Überspringen', style: TextStyle(color: C.muted)),
                 ),
               const Spacer(),
               FilledButton(
-                onPressed: _next,
+                onPressed: last && step.onAction != null
+                    ? () {
+                        widget.onDone();
+                        step.onAction!();
+                      }
+                    : _next,
                 style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.onAccent),
-                child: Text(last ? 'Los geht’s' : 'Weiter', style: const TextStyle(fontWeight: FontWeight.w800)),
+                child: Text(last ? (step.actionLabel ?? 'Los geht’s') : 'Weiter',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ],
           ),

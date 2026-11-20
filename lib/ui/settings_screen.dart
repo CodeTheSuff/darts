@@ -11,6 +11,7 @@ import 'look.dart';
 import 'about_screen.dart';
 import 'share_screens.dart';
 import 'theme.dart';
+import 'tutorial/tutorial_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -279,6 +280,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 18),
           const SectionTitle('App'),
           _group([
+            _action(Icons.menu_book_rounded, 'Tutorial', 'Alle Funktionen ausführlich erklärt',
+                () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TutorialScreen()))),
             _action(Icons.school_rounded, 'Einführung erneut zeigen', 'Kurzer Rundgang über die Startseite', () {
               Store.onboarded = false;
               Navigator.of(context).popUntil((r) => r.isFirst);

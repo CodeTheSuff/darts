@@ -9,6 +9,7 @@ import 'game_screen.dart';
 import 'link_coordinator.dart';
 import 'about_screen.dart';
 import 'coach_overlay.dart';
+import 'tutorial/tutorial_screen.dart';
 import 'link_screen.dart';
 import 'logo.dart';
 import 'settings_screen.dart';
@@ -129,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
           target: () => rectOf(_kLink),
           icon: Icons.wifi_tethering_rounded,
           title: 'Handys koppeln',
-          text: 'Mehrere Handys zeigen dasselbe Spiel, jedes kann eintragen. Spielerdaten gleichen sich automatisch ab.',
+          text: 'Mehrere Handys spielen zusammen, ein Tablet wird zur Anzeige an der Wand. Im Turnier spielt jedes Handy auf seiner eigenen Scheibe.',
         ),
         CoachStep(
           target: () => rectOf(_kStats),
@@ -141,7 +142,16 @@ class _HomeScreenState extends State<HomeScreen> {
           target: () => rectOf(_kSettings),
           icon: Icons.settings_rounded,
           title: 'Einstellungen',
-          text: 'Design, Ton, Caller-Ansage, Vibration und deine Daten. Die Einführung kannst du hier erneut starten.',
+          text: 'Design, Ton, Ansagen, Vibration und deine Daten. Diesen Rundgang kannst du hier erneut starten.',
+        ),
+        CoachStep(
+          target: () => rectOf(_kSettings),
+          icon: Icons.menu_book_rounded,
+          title: 'Großes Tutorial',
+          text: 'Es gibt ein ausführliches Tutorial, das jede Funktion erklärt – vom Eintragen bis zu Turnieren auf mehreren Scheiben. '
+              'Du findest es jederzeit in den Einstellungen unter „Tutorial“.',
+          actionLabel: 'Jetzt ansehen',
+          onAction: () => _open(const TutorialScreen()),
         ),
       ];
 

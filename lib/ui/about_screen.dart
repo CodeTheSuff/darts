@@ -9,10 +9,15 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.8.0';
+const appVersion = '2.9.0';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.9.0': [
+    (Icons.menu_book_rounded, 'Großes Tutorial', 'Jede Funktion ausführlich erklärt – in den Einstellungen unter „Tutorial“'),
+    (Icons.school_rounded, 'Einführung aktualisiert', 'Der kurze Rundgang zeigt am Ende, wo das große Tutorial ist'),
+    (Icons.auto_awesome_rounded, 'Neues Logo', 'Leuchtender Pfeil auf Anthrazit – auch größer auf dem Homebildschirm'),
+  ],
   '2.8.0': [
     (Icons.adjust_rounded, 'Mehrere Scheiben im Turnier', 'Jedes Handy trägt sein eigenes Turnierspiel ein – die Anzeige zeigt alle oder eine Scheibe'),
     (Icons.blur_circular_rounded, 'Trefferbild nach jedem Leg', 'Für jeden Spieler eine Scheibe – auch nach Training und Minispielen, mit passender Statistik'),

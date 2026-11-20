@@ -547,6 +547,11 @@ class Store {
       _p.setString('opts_$modeId', jsonEncode(o));
 
   // ---------------- Laufendes Match ----------------
+  /// Großes Tutorial: bereits angesehene Kapitel.
+  static Set<String> get tutorialSeen => (_p.getStringList('tutorialSeen') ?? const []).toSet();
+  static void markTutorialSeen(String id) =>
+      _p.setStringList('tutorialSeen', {...tutorialSeen, id}.toList());
+
   /// Anzeige: welche Scheibe gezeigt wird (0 = alle laufenden Spiele).
   static int get viewerBoard => _p.getInt('viewerBoard') ?? 0;
   static set viewerBoard(int v) => _p.setInt('viewerBoard', v);

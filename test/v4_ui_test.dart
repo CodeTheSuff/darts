@@ -27,15 +27,31 @@ void main() {
     await _setup(t, {});
     await t.pumpWidget(const DartsApp());
     await _steps(t);
-    expect(find.text('1/7'), findsOneWidget);
+    expect(find.text('1/8'), findsOneWidget); // letzter Schritt: Hinweis aufs große Tutorial
     await t.tap(find.text('Weiter'));
     await _steps(t);
-    expect(find.text('2/7'), findsOneWidget);
+    expect(find.text('2/8'), findsOneWidget);
     await t.tap(find.text('Überspringen'));
     await _steps(t);
-    expect(find.text('2/7'), findsNothing);
+    expect(find.text('2/8'), findsNothing);
     expect(Store.onboarded, isTrue);
     expect(Store.seenVersion, appVersion);
+  });
+
+  testWidgets('Letzter Einführungsschritt: „Jetzt ansehen“ öffnet das große Tutorial', (t) async {
+    await _setup(t, {});
+    await t.pumpWidget(const DartsApp());
+    await _steps(t);
+    for (var i = 1; i < 8; i++) {
+      await t.tap(find.text('Weiter'));
+      await _steps(t, 2);
+    }
+    expect(find.text('Großes Tutorial'), findsOneWidget);
+    expect(find.text('Später'), findsOneWidget);
+    await t.tap(find.text('Jetzt ansehen'));
+    await _steps(t);
+    expect(find.text('Alles, was die App kann'), findsOneWidget);
+    expect(Store.onboarded, isTrue);
   });
 
   testWidgets('Nach Update: „Was ist neu“ erscheint einmal', (t) async {
