@@ -19,9 +19,9 @@ import '../net/link.dart';
 import 'celebration.dart';
 import 'dartboard.dart';
 import 'hit_boards.dart';
+import 'match_share.dart';
 import 'keypad.dart';
 import 'link_coordinator.dart';
-import 'share_card.dart';
 import 'stats_table.dart';
 import 'theme.dart';
 
@@ -81,6 +81,14 @@ class _GameScreenState extends State<GameScreen> {
     seed: ctl.seed,
     darts: ctl.darts,
   );
+
+  /// Statistik-Zeilen fürs Teilen-Bild.
+  List<StatRow> _shareRows() {
+    final r = _report;
+    if (r != null) return matchRows(r);
+    final m = _modeReport;
+    return m == null ? const [] : modeRows(m, e.results());
+  }
 
   /// Statistik der Trainings- und Minispiele.
   ModeReport? get _modeReport => ModeReport.build(
@@ -1422,9 +1430,10 @@ class _GameScreenState extends State<GameScreen> {
                   icon: Icon(Icons.ios_share_rounded, color: C.text),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => ShareCardScreen(
-                        card: MatchShareCard(engine: e, date: DateTime.now()),
-                        fileName: 'darts_ergebnis.png',
+                      builder: (_) => MatchShareScreen(
+                        engine: e,
+                        rows: _shareRows(),
+                        date: DateTime.now(),
                       ),
                     ),
                   ),

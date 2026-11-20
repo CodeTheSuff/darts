@@ -1,3 +1,5 @@
+import 'package:darts_counter/data/match_report.dart';
+import 'package:darts_counter/ui/match_share.dart';
 import 'package:darts_counter/data/match_controller.dart';
 import 'package:darts_counter/data/storage.dart';
 import 'package:darts_counter/games/engine.dart';
@@ -100,7 +102,12 @@ void main() {
     }
     await t.pumpWidget(MaterialApp(
       theme: buildTheme(C.p),
-      home: ShareCardScreen(card: MatchShareCard(engine: c.engine, date: DateTime(2026, 11, 19)), fileName: 'x.png'),
+      home: MatchShareScreen(
+        engine: c.engine,
+        rows: matchRows(MatchReport.build(
+            config: c.config, players: c.players, startIndex: c.startIndex, seed: c.seed, darts: c.darts)!),
+        date: DateTime(2026, 11, 19),
+      ),
     ));
     await _steps(t, 2);
     expect(find.text('Simon'), findsWidgets);

@@ -4,7 +4,6 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../games/engine.dart';
 import '../games/tournament.dart';
 import 'logo.dart';
 import 'theme.dart';
@@ -113,83 +112,6 @@ class _CardFrame extends StatelessWidget {
             Expanded(child: child),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Ergebniskarte eines Matches.
-class MatchShareCard extends StatelessWidget {
-  const MatchShareCard({super.key, required this.engine, required this.date});
-  final GameEngine engine;
-  final DateTime date;
-
-  @override
-  Widget build(BuildContext context) {
-    final e = engine;
-    final res = e.results();
-    final w = res.first;
-    final wc = Color(e.players[w.playerIndex].color);
-    return _CardFrame(
-      accent: wc,
-      footer: _date(date),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(e.title.toUpperCase(),
-              style: const TextStyle(fontSize: 12, letterSpacing: 1.4, fontWeight: FontWeight.w800, color: Color(0xFFA8B0C2))),
-          const SizedBox(height: 6),
-          Text(e.n == 1 ? 'GESCHAFFT' : 'SIEG',
-              style: TextStyle(fontSize: 14, letterSpacing: 2, fontWeight: FontWeight.w800, color: wc)),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(e.players[w.playerIndex].name,
-                style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, height: 1.05)),
-          ),
-          const SizedBox(height: 14),
-          for (final r in res.take(4))
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: r.rank == 1 ? 0.10 : 0.05),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Color(e.players[r.playerIndex].color).withValues(alpha: r.rank == 1 ? 0.8 : 0.25)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(color: Color(e.players[r.playerIndex].color), shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(e.players[r.playerIndex].name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                        if (r.detail.isNotEmpty)
-                          Text(r.detail,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11, color: Color(0xFFA8B0C2))),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(r.value,
-                      style: const TextStyle(fontFamily: numFont, fontSize: 24, fontWeight: FontWeight.w800)),
-                ],
-              ),
-            ),
-          const Spacer(),
-          Text(e.subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFFA8B0C2))),
-        ],
       ),
     );
   }

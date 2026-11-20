@@ -1,4 +1,6 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member
+import 'package:darts_counter/data/match_report.dart';
+import 'package:darts_counter/ui/match_share.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -16,7 +18,6 @@ import 'package:darts_counter/data/analytics.dart';
 import 'package:darts_counter/games/bot.dart';
 import 'package:darts_counter/ui/link_coordinator.dart';
 import 'package:darts_counter/ui/scoreboard_screen.dart';
-import 'package:darts_counter/ui/share_card.dart';
 import 'package:darts_counter/models/dart.dart';
 import 'package:darts_counter/ui/settings_screen.dart';
 import 'package:darts_counter/ui/theme.dart';
@@ -182,10 +183,19 @@ void main() {
     await t.pumpWidget(MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: buildTheme(C.p),
-      home: ShareCardScreen(card: MatchShareCard(engine: c.engine, date: DateTime(2026, 11, 19)), fileName: 'x.png'),
+      home: MatchShareScreen(
+        engine: c.engine,
+        rows: matchRows(MatchReport.build(
+            config: c.config, players: c.players, startIndex: c.startIndex, seed: c.seed, darts: c.darts)!),
+        date: DateTime(2026, 11, 19),
+      ),
     ));
     await settle(t, 3);
     await shot(t, 'v5_card');
+    await shot(t, 'v8_share_single');
+    await t.tap(find.text('Alle'));
+    await settle(t, 3);
+    await shot(t, 'v8_share_all');
   });
 
   testWidgets('Statistik-Ansichten', (t) async {
