@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 
 import '../games/tournament.dart';
+import 'link_coordinator.dart';
 import 'theme.dart';
 import 'tournament_screens.dart' show BracketView, medalColor;
 
@@ -45,7 +46,7 @@ class _TournamentDisplayState extends State<TournamentDisplay> {
 
   List<(int, int, TMatch)> get _upcoming => [
     for (final m in t.playable)
-      if (m.id != widget.exceptMatch)
+      if (m.id != widget.exceptMatch && !LinkCoordinator.claims.containsKey(m.id))
         if (t.participants(m) case (final int a, final int b) when a >= 0 && b >= 0) (a, b, m),
   ];
 

@@ -11,7 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> _setup(WidgetTester tester, {Size size = const Size(412, 915), Map<String, Object>? prefs}) async {
-  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.7.0', 'sound': false, ...?prefs});
+  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.8.0', 'sound': false, ...?prefs});
   await Store.init();
   ThemeHost.apply(palettes.first);
   tester.view.physicalSize = size * 3;

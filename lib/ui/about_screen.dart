@@ -9,10 +9,19 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.7.0';
+const appVersion = '2.8.0';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.8.0': [
+    (Icons.adjust_rounded, 'Mehrere Scheiben im Turnier', 'Jedes Handy trägt sein eigenes Turnierspiel ein – die Anzeige zeigt alle oder eine Scheibe'),
+    (Icons.blur_circular_rounded, 'Trefferbild nach jedem Leg', 'Für jeden Spieler eine Scheibe – auch nach Training und Minispielen, mit passender Statistik'),
+    (Icons.ios_share_rounded, 'Schöneres Teilen-Bild', 'Mit Logo, Statistik und Trefferbild – für einen Spieler oder alle'),
+    (Icons.emoji_events_rounded, 'Turnier-Anzeige neu', 'Groß und gut lesbar: Baum/Tabelle, als Nächstes und letzte Ergebnisse im Wechsel'),
+    (Icons.sync_rounded, 'Automatisch weiter nach Absturz', 'Raum und Verbindung werden beim Neustart wiederhergestellt (bis 30 Minuten)'),
+    (Icons.casino_rounded, 'Ausbullen überall', 'Auch bei Training und Minispielen mit mehreren Spielern'),
+    (Icons.radio_button_checked_rounded, 'Cricket: Bull 50', 'Eigene Taste für das Bullseye'),
+  ],
   '2.7.0': [
     (Icons.record_voice_over_rounded, 'Eigene Ansagen', '80–180, Bullseye, „1“ und „You win“ mit deinen Sounds – die Computerstimme ist entfernt'),
     (Icons.celebration_rounded, 'Feuerwerk bei 180', 'Großes Feuerwerk, die 180 bleibt 3 Sekunden länger stehen'),
