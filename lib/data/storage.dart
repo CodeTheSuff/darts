@@ -547,6 +547,21 @@ class Store {
       _p.setString('opts_$modeId', jsonEncode(o));
 
   // ---------------- Laufendes Match ----------------
+  /// Letzte Kopplung (Raum offen bzw. verbunden) mit Zeitstempel `ts` (ms) –
+  /// für die automatische Wiederherstellung nach Absturz/Neustart.
+  static Map<String, dynamic>? get linkSession {
+    final raw = _p.getString('linkSession');
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static set linkSession(Map<String, dynamic>? v) =>
+      v == null ? _p.remove('linkSession') : _p.setString('linkSession', jsonEncode(v));
+
   static Map<String, dynamic>? get activeMatch {
     final raw = _p.getString('activeMatch');
     return raw == null ? null : Map<String, dynamic>.from(jsonDecode(raw) as Map);

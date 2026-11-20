@@ -111,6 +111,66 @@ class Link extends ChangeNotifier {
   String? hostName;
   bool _wantConnected = false;
   Timer? _retry;
+
+  // ---------------------------------------------------------------- Sitzung merken
+
+  /// Wie lange nach dem letzten Lebenszeichen eine Kopplung wiederhergestellt wird.
+  static const sessionMaxAge = Duration(minutes: 30);
+  Map<String, dynamic>? _session;
+  Timer? _sessionBeat;
+
+  /// Kopplung merken und alle 30 s den Zeitstempel erneuern (Lebenszeichen).
+  void _remember(Map<String, dynamic> session) {
+    _session = session;
+    _beat();
+    _sessionBeat?.cancel();
+    _sessionBeat = Timer.periodic(const Duration(seconds: 30), (_) => _beat());
+  }
+
+  void _beat() {
+    final s = _session;
+    if (s == null) return;
+    Store.linkSession = {...s, 'ts': DateTime.now().millisecondsSinceEpoch};
+  }
+
+  void _clientSession() {
+    if (role != LinkRole.client) return;
+    _remember({
+      'role': 'client',
+      'address': hostAddress,
+      'port': hostPort,
+      'code': code,
+      'name': hostName,
+      'viewer': joinedAsViewer,
+      'device': _remembered ?? _expectHost,
+    });
+  }
+
+  /// Gemerkte Kopplung, falls jünger als [sessionMaxAge] (sonst null und gelöscht).
+  static Map<String, dynamic>? recentSession([DateTime? now]) {
+    final s = Store.linkSession;
+    if (s == null) return null;
+    final ts = (s['ts'] as num?)?.toInt() ?? 0;
+    final age = (now ?? DateTime.now()).millisecondsSinceEpoch - ts;
+    if (age < 0 || age > sessionMaxAge.inMilliseconds) {
+      Store.linkSession = null;
+      return null;
+    }
+    return s;
+  }
+
+  /// Vom Nutzer gewollt trennen bzw. Raum schließen: nichts wiederherstellen.
+  Future<void> leave() async {
+    _forget();
+    await stop();
+  }
+
+  void _forget() {
+    _session = null;
+    _sessionBeat?.cancel();
+    _sessionBeat = null;
+    Store.linkSession = null;
+  }
   int remoteDevices = 0;
 
   // Raumsuche
@@ -180,6 +240,7 @@ class Link extends ChangeNotifier {
     } catch (_) {}
     _announce = Timer.periodic(const Duration(seconds: 1), (_) => _sendAnnouncement());
     _sendAnnouncement();
+    _remember({'role': 'host'});
     notifyListeners();
   }
 
@@ -465,6 +526,8 @@ class Link extends ChangeNotifier {
       role = LinkRole.none;
       status = 'Verbindung fehlgeschlagen';
       notifyListeners();
+    } else {
+      _clientSession();
     }
     return ok;
   }
@@ -529,6 +592,7 @@ class Link extends ChangeNotifier {
             msg['hostDevice'] == _expectHost &&
             msg['proof'] == authProof(key, 'host', _nonce ?? '', _expectHost ?? '');
         if (!ok) {
+          _forget();
           _wantConnected = false;
           awaitingApproval = false;
           denied = true;
@@ -556,6 +620,7 @@ class Link extends ChangeNotifier {
           // Wiederverbinden ab jetzt mit Schlüssel
           _byKey = true;
           _remembered = hd;
+          _clientSession();
         }
       case 'pending':
         awaitingApproval = true;
@@ -565,6 +630,7 @@ class Link extends ChangeNotifier {
         awaitingApproval = false;
         denied = true;
         _wantConnected = false;
+        _forget();
         if (msg['reason'] == 'unknown' && _expectHost != null) {
           // Host kennt den Schlüssel nicht mehr → beim nächsten Mal mit Code neu koppeln.
           Store.setHostKey(_expectHost!, null);
@@ -895,6 +961,10 @@ class Link extends ChangeNotifier {
 
   Future<void> stop() async {
     _wantConnected = false;
+    // Gemerkte Kopplung bleibt bestehen (Absturz/Beenden) – nur [leave] löscht sie.
+    _session = null;
+    _sessionBeat?.cancel();
+    _sessionBeat = null;
     _retry?.cancel();
     _announce?.cancel();
     _announce = null;

@@ -172,7 +172,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> with SingleTickerPr
 
   Future<void> _leave() async {
     LinkCoordinator.viewer = false;
-    await Link.I.stop();
+    await Link.I.leave();
     if (mounted) Navigator.of(context).pop();
   }
 

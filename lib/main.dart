@@ -50,7 +50,11 @@ class _DartsAppState extends State<DartsApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => showHangNotice());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showHangNotice();
+      // Nach Absturz/Neustart die Kopplung wiederherstellen (nur kurz danach).
+      unawaited(LinkCoordinator.restoreSession());
+    });
   }
 
   @override

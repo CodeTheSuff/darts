@@ -315,7 +315,7 @@ class _LinkScreenState extends State<LinkScreen> {
   }
 
   Future<void> _leave() async {
-    await l.stop();
+    await l.leave();
     l.startDiscovery();
   }
 

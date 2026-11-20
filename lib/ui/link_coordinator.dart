@@ -58,6 +58,58 @@ class LinkCoordinator {
     _showBoard();
   }
 
+  /// Nach Absturz/Neustart: Raum wieder öffnen bzw. neu verbinden (nur, wenn die
+  /// Kopplung höchstens [Link.sessionMaxAge] her ist). Der Host öffnet das laufende Match.
+  static Future<void> restoreSession() async {
+    final s = Link.recentSession();
+    if (s == null || Link.I.role != LinkRole.none) return;
+    ErrorLog.crumb('Kopplung wird wiederhergestellt (${s['role']})');
+    if (s['role'] == 'host') {
+      try {
+        await Link.I.startHost();
+      } catch (_) {
+        return;
+      }
+      final active = Store.activeMatch;
+      final m = active == null ? null : MatchController.fromJson(active);
+      final nav = navigatorKey.currentState;
+      if (m != null && !m.engine.finished && nav != null) {
+        unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => GameScreen(controller: m))));
+      }
+      return;
+    }
+    final address = s['address'] as String?;
+    final code = s['code'] as String? ?? '';
+    final device = s['device'] as String?;
+    final asViewer = s['viewer'] == true;
+    final name = s['name'] as String?;
+    final port = (s['port'] as num?)?.toInt() ?? Link.defaultPort;
+
+    Future<bool> tryJoin(String addr, int p) async {
+      viewer = asViewer;
+      final ok = await Link.I.join(addr, p, code, name: name, viewer: asViewer, hostDevice: device);
+      if (ok && asViewer) startViewer();
+      if (!ok) viewer = false;
+      return ok;
+    }
+
+    if (address != null && await tryJoin(address, port)) return;
+    // Host evtl. noch nicht wieder da oder neue Adresse: bis zu 2 Minuten suchen.
+    if (device == null) return;
+    await Link.I.startDiscovery();
+    final until = DateTime.now().add(const Duration(minutes: 2));
+    while (DateTime.now().isBefore(until) && Link.I.role == LinkRole.none) {
+      final room = Link.I.rooms.value.where((r) => r.device == device).firstOrNull;
+      if (room != null) {
+        if (await tryJoin(room.address, room.port)) break;
+      } else if (address != null && await tryJoin(address, port)) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+    Link.I.stopDiscovery();
+  }
+
   static void init() {
     if (_init) return;
     _init = true;
