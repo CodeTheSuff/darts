@@ -115,7 +115,12 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
+      // Erst die Statistik mit Trefferbildern, dann die Ergebnisseite
+      expect(find.text('STATISTIK'), findsOneWidget);
       expect(find.text('TREFFERBILD'), findsOneWidget);
+      expect(find.text('Ergebnis'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Fortsetzen'));
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('Revanche'), findsOneWidget);
     });
   }

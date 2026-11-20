@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../data/callouts.dart';
 import '../data/match_controller.dart';
 import '../data/match_report.dart';
+import '../data/mode_report.dart';
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../games/engine.dart';
@@ -17,6 +18,7 @@ import '../models/dart.dart';
 import '../net/link.dart';
 import 'celebration.dart';
 import 'dartboard.dart';
+import 'hit_boards.dart';
 import 'keypad.dart';
 import 'link_coordinator.dart';
 import 'share_card.dart';
@@ -73,6 +75,15 @@ class _GameScreenState extends State<GameScreen> {
   bool _matchStatsOpen = false;
 
   MatchReport? get _report => MatchReport.build(
+    config: ctl.config,
+    players: ctl.players,
+    startIndex: ctl.startIndex,
+    seed: ctl.seed,
+    darts: ctl.darts,
+  );
+
+  /// Statistik der Trainings- und Minispiele.
+  ModeReport? get _modeReport => ModeReport.build(
     config: ctl.config,
     players: ctl.players,
     startIndex: ctl.startIndex,
@@ -456,7 +467,7 @@ class _GameScreenState extends State<GameScreen> {
         _busy = false;
         _pause = null;
         _showResult = true;
-        _matchStatsOpen = e is X01Game;
+        _matchStatsOpen = true;
       });
       return;
     }
@@ -1081,7 +1092,10 @@ class _GameScreenState extends State<GameScreen> {
     required List<Widget> children,
     required String button,
     required VoidCallback onButton,
+    Widget? side,
   }) {
+    // Breite Bildschirme (Tablet quer): Tabellen links, Trefferbilder rechts daneben.
+    final wide = side != null && MediaQuery.sizeOf(context).width >= 1000;
     return Positioned.fill(
       child: Container(
         color: C.bg,
@@ -1104,9 +1118,25 @@ class _GameScreenState extends State<GameScreen> {
                 ),
                 const SizedBox(height: 14),
                 Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
-                  ),
+                  child: wide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(child: SingleChildScrollView(child: side)),
+                          ],
+                        )
+                      : SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [...children, ?side],
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -1156,7 +1186,11 @@ class _GameScreenState extends State<GameScreen> {
       eyebrow: 'LEG ${leg.number} BEENDET',
       title: '${e.players[w].name} checkt ${ws.finish} mit ${ws.darts} Darts',
       color: _color(w),
-      children: [_card('LEG-STATISTIK', StatsTable(players: e.players, rows: legRows(leg)))],
+      children: [
+        _card('LEG-STATISTIK', StatsTable(players: e.players, rows: legRows(leg))),
+      ],
+      side: _card('TREFFERBILD DIESES LEGS',
+          HitBoards(players: e.players, hits: [for (final p in leg.players) p.hits])),
       button: 'Weiter',
       onButton: _closeLegStats,
     );
@@ -1165,8 +1199,24 @@ class _GameScreenState extends State<GameScreen> {
   /// Statistik des ganzen Matches (vor der Ergebnisseite).
   Widget _matchStatsPanel() {
     final r = _report;
-    if (r == null) return _resultPanel();
     final res = e.results();
+    final order = [for (final x in res) x.playerIndex];
+    if (r == null) {
+      final m = _modeReport;
+      if (m == null) return _resultPanel();
+      final w = res.first.playerIndex;
+      return _statsPage(
+        eyebrow: 'STATISTIK',
+        title: e.n == 1 ? '${e.players[w].name} · ${res.first.value}' : '${e.players[w].name} gewinnt',
+        color: C.gold,
+        children: [
+          _card(e.n == 1 ? 'WERTE' : 'VERGLEICH', StatsTable(players: e.players, rows: modeRows(m, res))),
+        ],
+        side: _card('TREFFERBILD', HitBoards(players: e.players, hits: e.hits, order: order)),
+        button: 'Fortsetzen',
+        onButton: () => setState(() => _matchStatsOpen = false),
+      );
+    }
     final w = res.first.playerIndex;
     final legsLine = e.n == 2 && e.legsToWin != null ? '  ${e.legsOf(w)} : ${e.legsOf(1 - w)}' : '';
     return _statsPage(
@@ -1176,8 +1226,8 @@ class _GameScreenState extends State<GameScreen> {
       children: [
         _card('VERGLEICH', StatsTable(players: e.players, rows: matchRows(r))),
         if (r.legs.length > 1) _card('LEGS', LegList(report: r)),
-        _hitSection(res),
       ],
+      side: _card('TREFFERBILD', HitBoards(players: e.players, hits: e.hits, order: order)),
       button: 'Fortsetzen',
       onButton: () => setState(() => _matchStatsOpen = false),
     );
@@ -1273,12 +1323,11 @@ class _GameScreenState extends State<GameScreen> {
                                 ],
                               ),
                             ),
-                          if (e is X01Game)
-                            TextButton.icon(
+                          TextButton.icon(
                               onPressed: () => setState(() => _matchStatsOpen = true),
                               icon: const Icon(Icons.query_stats_rounded),
-                              label: const Text(
-                                'Matchstatistik ansehen',
+                              label: Text(
+                                e is X01Game ? 'Matchstatistik ansehen' : 'Statistik ansehen',
                                 style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                             ),

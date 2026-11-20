@@ -28,6 +28,9 @@ class PlayerLegStats {
   /// Finish-Wert in diesem Leg (null = nicht gecheckt).
   int? finish;
 
+  /// Trefferbild (Schlüssel wie [Dart.key]).
+  final Map<String, int> hits = {};
+
   double get average => darts == 0 ? 0 : points / darts * 3;
   double get first9 => f9Darts == 0 ? 0 : f9Points / f9Darts * 3;
   double get coRate => coAttempts == 0 ? 0 : coHits / coAttempts * 100;
@@ -45,6 +48,7 @@ class PlayerLegStats {
     c140 += o.c140;
     c180 += o.c180;
     if (o.highestVisit > highestVisit) highestVisit = o.highestVisit;
+    o.hits.forEach((k, v) => hits[k] = (hits[k] ?? 0) + v);
   }
 }
 
@@ -107,6 +111,7 @@ class MatchReport {
       final leg = legs.last;
       final s = leg.players[p];
       s.darts++;
+      s.hits[d.key] = (s.hits[d.key] ?? 0) + 1;
       if (attempt) s.coAttempts++;
 
       final legEnded = e.legsPlayed > legsBefore || e.placed.length > placedBefore;
