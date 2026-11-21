@@ -16,7 +16,7 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 
 ## Phase 2 – parallel (4 Agenten, Worktrees) – gestartet 2026-11-21 nach Commit dd5480d
 - [x] A Server – gemergt (81d7ae0), 38 Tests grün, Linux-Cross-Kompilierung ok, Leerlauf 15 MB RAM
-- [ ] B Web-Tauglichkeit
+- [x] B Web-Tauglichkeit – gemergt (cb9e066), 335 Tests, Web-Build ok, headless Edge: Start/X01/Backup/Offline ok
 - [ ] C Kopplung in der App
 - [x] D Paket, Anleitung, E2E-Tests – gemergt (7e8f2cd), E2E 9/9 grün gegen echten Server
 
@@ -33,6 +33,12 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 ## Notizen für Phase 3
 - docs/lokaler_test.md: Menüpfad „Koppeln → Erweitert → Server-Adresse“ an echte UI von Agent C anpassen.
 - Docker/systemd/Caddy/nginx nicht praktisch getestet (keine Linux-Umgebung hier).
+
+- Nach Merge C prüfen: Fehler beim Öffnen von „Handys koppeln“ im Browser (2× Uncaught Error laut Agent B – vermutlich WLAN-Suche).
+- Einstellungen im Browser: Raum-Code und „Spieler teilen … an anderes Handy“ sind WLAN-bezogen → im Web anpassen/ausblenden.
+- Update im Web: Plat.I.reload() von Agent B nutzen.
+- Prüfen, dass Roboto-Alias das Nachladen von fonts.gstatic.com verhindert (im Browser-Test).
+- `pub get` in packages/darts_protocol, server, tool/e2e vor analyze.
 
 ## Bitte prüfen (Entscheidungen, die ich allein getroffen habe)
 - Online-Raum-Codes sind 6-stellig (z. B. „K7M 2QX“) und werden vom Server vergeben – der 4-stellige WLAN-Code wäre online zu leicht zu erraten bzw. würde zwischen verschiedenen Nutzern kollidieren. Neue Geräte müssen weiterhin am Host bestätigt werden.
