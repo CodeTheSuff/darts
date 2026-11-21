@@ -1,0 +1,63 @@
+# Darts – systemd-Dienst (Weg B ohne Docker, siehe ANLEITUNG_HOSTING.md)
+#
+# Ablage: /etc/systemd/system/darts.service
+#   systemctl daemon-reload
+#   systemctl enable --now darts
+#   journalctl -u darts -f          (Logs)
+#
+# Erwartet: Dateien unter /opt/darts (bin/, web/, apk/, version.json),
+#           Einstellungen in /etc/darts/darts.env (Vorlage .env.example),
+#           Benutzer "darts" (useradd --system --no-create-home --shell /usr/sbin/nologin darts).
+
+[Unit]
+Description=Darts Vermittlungs-Server und Web-App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=darts
+Group=darts
+WorkingDirectory=/opt/darts
+EnvironmentFile=/etc/darts/darts.env
+# Pfade fest auf /opt/darts (überschreibt Angaben aus der env-Datei)
+Environment=WEB_DIR=/opt/darts/web
+Environment=APK_DIR=/opt/darts/apk
+Environment=VERSION_FILE=/opt/darts/version.json
+ExecStart=/opt/darts/bin/darts_server
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+# Ressourcen (Ziel < 100 MB)
+MemoryMax=256M
+TasksMax=100
+LimitNOFILE=8192
+
+# Härtung – der Dienst braucht nur Lesezugriff auf /opt/darts und Netzwerk.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077
+# Kein MemoryDenyWriteExecute – die Dart-Laufzeit braucht ausführbaren Speicher.
+
+[Install]
+WantedBy=multi-user.target

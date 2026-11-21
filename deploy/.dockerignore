@@ -1,0 +1,8 @@
+# Nur das Nötige in den Docker-Build-Kontext (Dockerfile kopiert bin/, web/, apk/, version.json)
+.env
+*.md
+*.zip
+Caddyfile
+nginx-darts.conf
+darts.service
+docker-compose.yml

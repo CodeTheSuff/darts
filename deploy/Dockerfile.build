@@ -1,0 +1,23 @@
+# Ersatzweg: Server-Binärdatei für Linux IN Docker bauen (statt Cross-Kompilierung unter Windows).
+#
+# Normalerweise nicht nötig – tool/build_release.ps1 kompiliert unter Windows direkt für Linux
+# (dart compile exe --target-os=linux --target-arch=x64, geht ab Dart 3.8).
+# Dieses Dockerfile ist für den Fall, dass das einmal nicht klappt, oder für einen Bau auf Linux.
+#
+# Aufruf in der Projektwurzel (Kontext = Projektwurzel, gebraucht werden nur server/ und packages/):
+#   docker build -f deploy/Dockerfile.build --target export --output type=local,dest=release/bin .
+# Ergebnis: release/bin/darts_server
+#
+# Wird NICHT ins ZIP gepackt.
+
+FROM dart:stable AS build
+WORKDIR /src
+COPY packages/darts_protocol/ packages/darts_protocol/
+COPY server/ server/
+WORKDIR /src/server
+RUN dart pub get \
+ && mkdir -p /out \
+ && dart compile exe bin/server.dart -o /out/darts_server
+
+FROM scratch AS export
+COPY --from=build /out/darts_server /darts_server
