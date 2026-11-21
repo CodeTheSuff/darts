@@ -269,6 +269,18 @@ void main() {
       await other.expectFrame('joined');
     });
 
+    test('Ohne TRUST_PROXY wird X-Forwarded-For ignoriert', () async {
+      final s = await startServer(testConfig(maxBadJoins: 2));
+      for (final ip in ['10.0.0.1', '10.0.0.2']) {
+        final g = await Client.connect(s, headers: {'X-Forwarded-For': ip});
+        g.send(RelayFrame.join(app: 'test', room: 'ZZZZZZ'));
+        await g.expectError(RelayError.noRoom);
+      }
+      final blocked = await Client.connect(s, headers: {'X-Forwarded-For': '10.0.0.3'});
+      blocked.send(RelayFrame.join(app: 'test', room: 'ZZZZZZ'));
+      await blocked.expectError(RelayError.rate);
+    });
+
     test('Rate-Limit → error rate und Trennung', () async {
       final s = await startServer(testConfig(messagesPerSecond: 5, burst: 10));
       final r = await openRoom(s);

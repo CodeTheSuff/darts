@@ -56,6 +56,7 @@ void main() {
     final res = await httpGet(s, '/version.json');
     expect(res.status, 200);
     expect(res.headers['cache-control'], 'no-cache');
+    expect(res.headers['access-control-allow-origin'], '*');
     final info = VersionInfo.fromJson(jsonDecode(utf8.decode(res.body)) as Map<String, dynamic>);
     expect(info.build, 20);
     File('${root.path}/version.json').deleteSync();

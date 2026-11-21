@@ -92,15 +92,19 @@ class HttpApp {
 
   Response _notFound() => Response.notFound('Nicht gefunden', headers: {'Content-Type': 'text/plain; charset=utf-8'});
 
-  Response _health() => Response.ok(
-        jsonEncode(health()),
-        headers: {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache'},
-      );
+  /// Öffentliche, harmlose JSON-Antworten – auch von anderer Herkunft lesbar (z. B. `flutter run -d chrome`).
+  static const _jsonHeaders = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Allow-Origin': '*',
+  };
+
+  Response _health() => Response.ok(jsonEncode(health()), headers: _jsonHeaders);
 
   Future<Response> _version() async {
     final raw = await versions.raw();
     if (raw == null) return _notFound();
-    return Response.ok(raw, headers: {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache'});
+    return Response.ok(raw, headers: _jsonHeaders);
   }
 
   Future<Response> _apk(Request request, List<String> segs) async {
