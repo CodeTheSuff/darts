@@ -1,0 +1,14 @@
+name: darts_e2e
+description: Ende-zu-Ende-Test des Vermittlungs-Servers (Host + Gäste als reine Protokoll-Clients).
+version: 3.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  darts_protocol:
+    path: ../../packages/darts_protocol
+
+dev_dependencies:
+  test: ^1.25.0
