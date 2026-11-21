@@ -15,10 +15,10 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 - [x] Commit Phase 1
 
 ## Phase 2 – parallel (4 Agenten, Worktrees) – gestartet 2026-11-21 nach Commit dd5480d
-- [ ] A Server
+- [x] A Server – gemergt (81d7ae0), 38 Tests grün, Linux-Cross-Kompilierung ok, Leerlauf 15 MB RAM
 - [ ] B Web-Tauglichkeit
 - [ ] C Kopplung in der App
-- [ ] D Paket, Anleitung, E2E-Tests
+- [x] D Paket, Anleitung, E2E-Tests – gemergt (7e8f2cd), E2E 9/9 grün gegen echten Server
 
 ## Phase 3 – Zusammenführen (allein)
 - [ ] Merge aller Branches
@@ -29,6 +29,10 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 - [ ] release\darts_server_3.0.0.zip (ohne Schlüssel geprüft)
 - [ ] iPhone-Test vorbereitet (cloudflared – vorher fragen!)
 - [ ] Commit, Memory, Push
+
+## Notizen für Phase 3
+- docs/lokaler_test.md: Menüpfad „Koppeln → Erweitert → Server-Adresse“ an echte UI von Agent C anpassen.
+- Docker/systemd/Caddy/nginx nicht praktisch getestet (keine Linux-Umgebung hier).
 
 ## Bitte prüfen (Entscheidungen, die ich allein getroffen habe)
 - Online-Raum-Codes sind 6-stellig (z. B. „K7M 2QX“) und werden vom Server vergeben – der 4-stellige WLAN-Code wäre online zu leicht zu erraten bzw. würde zwischen verschiedenen Nutzern kollidieren. Neue Geräte müssen weiterhin am Host bestätigt werden.
