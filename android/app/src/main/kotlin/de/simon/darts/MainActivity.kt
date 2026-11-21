@@ -1,4 +1,4 @@
-package com.example.darts_counter
+package de.simon.darts
 
 import android.content.Context
 import android.net.ConnectivityManager

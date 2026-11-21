@@ -11,7 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> _setup(WidgetTester tester, {Size size = const Size(412, 915), Map<String, Object>? prefs}) async {
-  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.10.0', 'sound': false, ...?prefs});
+  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.10.1', 'sound': false, ...?prefs});
   await Store.init();
   ThemeHost.apply(palettes.first);
   tester.view.physicalSize = size * 3;
@@ -91,9 +91,13 @@ void main() {
       await tester.tap(find.text('X01'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'Anna');
+      // Regeln stehen oben – auf kleinen Bildschirmen zu den Spieler-Tasten scrollen
+      await tester.scrollUntilVisible(find.text('+ Bot'), 150, scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('+ Bot'));
       await tester.pumpAndSettle();
       expect(find.text('Bot (Mittel)'), findsOneWidget);
+      await tester.ensureVisible(find.text('Profi'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Profi'));
       await tester.pumpAndSettle();
       expect(find.text('Bot (Profi)'), findsOneWidget);

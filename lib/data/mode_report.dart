@@ -52,6 +52,7 @@ class ModeReport {
     for (final d in darts) {
       if (d.isControl) {
         e.apply(d);
+        if (e.turn.isEmpty) visit = 0; // z. B. Runde übersprungen: angefangene Aufnahme verfällt
         continue;
       }
       if (e.finished) break;

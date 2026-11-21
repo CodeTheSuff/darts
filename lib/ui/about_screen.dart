@@ -9,10 +9,16 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.10.0';
+const appVersion = '2.10.1';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.10.1': [
+    (Icons.swap_calls_rounded, 'Checkout-Training abwechselnd', '121, Catch 40 und Checkout-Training: je 3 Darts, dann ist der Nächste dran'),
+    (Icons.skip_next_rounded, 'Runde überspringen', 'Ist einer fertig, kann der Rest der Runde nach Rückfrage übersprungen werden'),
+    (Icons.tune_rounded, 'Regeln oben', 'Vor dem Spiel stehen die Regeln jetzt über den Spielern'),
+    (Icons.volume_off_rounded, 'Ansage „1“ nur in X01', 'Dreimal die 1 wird nur im X01-Match und im Turnier angesagt'),
+  ],
   '2.10.0': [
     (Icons.dialpad_rounded, 'Neue Eingabe im Spiel', 'Zahlen in 4 Spalten, rechts Zurück, 0, 25 und 50 – Double/Triple unten, die Tasten zeigen dann D bzw. T'),
     (Icons.flag_rounded, 'Finish-Feld pro Dart', 'Der Finish-Weg steht in einem Bereich je Dart: Double grün, Triple orange, Single weiß'),

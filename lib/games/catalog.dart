@@ -138,7 +138,8 @@ final List<ModeDef> modes = [
     category: ModeCategory.training,
     short: 'Zufällige Finishes mit 9 Darts',
     rules: 'Jede Runde gibt es eine Zufallszahl – für alle Spieler dieselbe. Du hast 9 Darts '
-        '(3 Aufnahmen), um mit Double Out auszuchecken.',
+        '(3 Aufnahmen), um mit Double Out auszuchecken. Geworfen wird abwechselnd mit je 3 Darts. '
+        'Wer fertig ist, setzt aus, bis alle durch sind – oder ihr überspringt den Rest der Runde.',
     options: const [
       OptionDef.choice(
           'range',
@@ -161,7 +162,8 @@ final List<ModeDef> modes = [
     name: '121',
     category: ModeCategory.training,
     short: 'Finish unter Druck – geschafft heißt +1',
-    rules: 'Checke 121 mit 9 Darts aus. Klappt es, geht es mit 122 weiter, sonst zurück auf 121.',
+    rules: 'Checke 121 mit 9 Darts aus. Klappt es, geht es mit 122 weiter, sonst zurück auf 121. '
+        'Geworfen wird abwechselnd mit je 3 Darts, jeder hat sein eigenes Ziel.',
     options: const [
       OptionDef.choice('rounds', 'Runden', _rounds, 10),
     ],
@@ -259,7 +261,8 @@ final List<ModeDef> modes = [
     category: ModeCategory.mini,
     short: 'Finishes von 61 aufwärts mit 6 Darts',
     rules: 'Ziele 61, 62, 63 … mit je 6 Darts. Check in 2 Darts = 3 Punkte, in 3 Darts = 2 Punkte, '
-        'in 4–6 Darts = 1 Punkt.',
+        'in 4–6 Darts = 1 Punkt. Geworfen wird abwechselnd mit je 3 Darts. Wer fertig ist, setzt aus, '
+        'bis alle durch sind – oder ihr überspringt den Rest der Runde.',
     options: const [
       OptionDef.choice('rounds', 'Ziele',
           [OptionChoice(10, '10'), OptionChoice(20, '20'), OptionChoice(40, '40')], 10),

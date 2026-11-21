@@ -243,6 +243,23 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Text(mode.rules, style: TextStyle(color: C.muted2, height: 1.4)),
           ),
         ),
+      // Regeln zuerst, damit man sie gleich sieht – danach die Spieler.
+      if (opts.isNotEmpty) ...[
+        SectionTitle(_isX01 ? 'Match' : 'Regeln'),
+        GlowCard(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          strength: 0.05,
+          child: Column(
+            children: [
+              for (var k = 0; k < opts.length; k++) ...[
+                if (k > 0) Divider(height: 1, color: C.surface3),
+                _option(opts[k]),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+      ],
       SectionTitle('Spieler', trailing: _hasBot ? 'Du gegen Bot' : '${_slots.length} / $maxPlayers'),
       for (var i = 0; i < _slots.length; i++) _playerCard(i),
       if (canAdd || canBot)
@@ -288,22 +305,6 @@ class _SetupScreenState extends State<SetupScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
           ],
-        ),
-      ],
-      if (opts.isNotEmpty) ...[
-        const SizedBox(height: 18),
-        SectionTitle(_isX01 ? 'Match' : 'Regeln'),
-        GlowCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          strength: 0.05,
-          child: Column(
-            children: [
-              for (var k = 0; k < opts.length; k++) ...[
-                if (k > 0) Divider(height: 1, color: C.surface3),
-                _option(opts[k]),
-              ],
-            ],
-          ),
         ),
       ],
       ...widget.footer,

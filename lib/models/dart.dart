@@ -44,12 +44,16 @@ class Dart {
   /// Nach dem Sieg: die übrigen Spieler spielen um den nächsten Platz weiter.
   static const playOn = Dart(-2, 1);
 
+  /// Checkout-Training/Catch 40: Wer noch wirft, wird übersprungen – nächste Zahl für alle.
+  static const skipRound = Dart(-3, 1);
+
   bool get isControl => field < 0;
 
   /// Kompakte Zahl fürs Archiv: Feld * 4 + Multiplikator, Markierungen negativ.
-  int get code => isControl ? (field == -2 ? -3 : -1 - mult) : field * 4 + mult;
+  int get code => isControl ? (field == -3 ? -4 : field == -2 ? -3 : -1 - mult) : field * 4 + mult;
 
-  factory Dart.fromCode(int c) => c == -3 ? playOn : (c < 0 ? Dart(-1, -1 - c) : Dart(c ~/ 4, c % 4));
+  factory Dart.fromCode(int c) =>
+      c == -4 ? skipRound : c == -3 ? playOn : (c < 0 ? Dart(-1, -1 - c) : Dart(c ~/ 4, c % 4));
 
   int get value => isControl ? 0 : field * mult;
   bool get isMiss => field == 0;
@@ -58,6 +62,7 @@ class Dart {
   bool get isTriple => mult == 3;
 
   String get label {
+    if (field == -3) return 'Runde übersprungen';
     if (field == -2) return 'Weiterspielen';
     if (isControl) return mult == 1 ? 'Single Out an' : 'Single Out aus';
     if (field == 0) return 'Miss';

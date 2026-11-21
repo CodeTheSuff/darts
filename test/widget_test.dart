@@ -170,15 +170,75 @@ void main() {
       expect(g.ownTarget[0], 122);
     });
 
-    test('Checkout-Training: 9 Darts ohne Finish = gescheitert', () {
+    test('Checkout-Training: abwechselnd je 3 Darts, 9 Darts ohne Finish = gescheitert', () {
       final g = buildEngine(const GameConfig('checkout', {'range': '41-100', 'rounds': 5}), [p1, p2], 0, 1)
           as CheckoutChallengeGame;
-      for (var i = 0; i < 8; i++) {
-        expect(g.apply(const Dart(0, 1)).turnEnded, isFalse);
+      const miss = Dart(0, 1);
+      expect(g.target, g.roundTargets[0]);
+      for (var v = 0; v < 6; v++) {
+        // Aufnahmen wechseln: A, B, A, B, A, B
+        expect(g.cur, v % 2);
+        expect(g.target, g.roundTargets[0]); // gleiche Zahl für alle
+        g.apply(miss);
+        g.apply(miss);
+        expect(g.apply(miss).turnEnded, isTrue);
       }
-      expect(g.apply(const Dart(0, 1)).turnEnded, isTrue);
+      expect(g.stage, 2); // beide fertig: nächste Zahl
+      expect(g.done, [false, false]);
+      expect(g.cur, 0); // neue Zahl: wieder beginnt der Anwerfer
+      expect(g.target, g.roundTargets[1]);
+      expect(g.used, 0);
+    });
+
+    test('Catch 40: Fertige setzen aus, die anderen werfen weiter', () {
+      final g = buildEngine(const GameConfig('catch40', {'rounds': 10}), [p1, p2], 0, 1) as CheckoutChallengeGame;
+      // A checkt 61 mit 2 Darts (T15 + D8)
+      g.apply(t(15));
+      final ev = g.apply(dd(8));
+      expect(ev.turnEnded, isTrue);
+      expect(g.score[0], 3);
+      expect(g.canSkipRound, isTrue);
+      // B wirft zweimal, A setzt aus
+      for (var v = 0; v < 2; v++) {
+        expect(g.cur, 1);
+        for (var i = 0; i < 3; i++) {
+          g.apply(const Dart(0, 1));
+        }
+      }
+      expect(g.stage, 2);
+      expect(g.target, 62);
+      expect(g.cur, 0);
+    });
+
+    test('Catch 40: Runde überspringen', () {
+      final g = buildEngine(const GameConfig('catch40', {'rounds': 10}), [p1, p2], 0, 1) as CheckoutChallengeGame;
+      expect(g.canSkipRound, isFalse); // noch keiner fertig
+      g.apply(t(15));
+      g.apply(dd(8));
+      g.apply(s(1)); // B hat einen Pfeil geworfen
+      g.apply(Dart.skipRound);
+      expect(g.stage, 2);
+      expect(g.target, 62);
+      expect(g.cur, 0);
+      expect(g.turn, isEmpty);
+      expect(g.score, [3, 0]);
+      expect(g.rests, [62, 62]);
+    });
+
+    test('121: abwechselnd, jeder mit eigenem Ziel', () {
+      final g = buildEngine(const GameConfig('121', {'rounds': 5}), [p1, p2], 0, 1) as CheckoutChallengeGame;
+      g.apply(t(20));
+      g.apply(t(17));
+      g.apply(dd(5)); // A checkt 121
       expect(g.cur, 1);
-      expect(g.target, g.roundTargets[0]); // gleiche Zahl für alle
+      expect(g.target, 121);
+      g.apply(t(20));
+      g.apply(s(1));
+      g.apply(s(1)); // B steht auf 59
+      expect(g.cur, 0);
+      expect(g.target, 122);
+      expect(g.rests[1], 59);
+      expect(g.canSkipRound, isFalse);
     });
   });
 

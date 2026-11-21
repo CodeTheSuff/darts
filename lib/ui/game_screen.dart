@@ -13,6 +13,7 @@ import '../data/storage.dart';
 import '../games/engine.dart';
 
 import '../games/minigames.dart';
+import '../games/training.dart';
 import '../games/x01.dart';
 import '../models/dart.dart';
 import '../net/link.dart';
@@ -348,6 +349,80 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  // ---------------------------------------------------------------- Runde überspringen
+
+  /// Checkout-Training/Catch 40: Einer ist fertig, andere werfen noch.
+  bool get _skipVisible {
+    final g = e;
+    return g is CheckoutChallengeGame && g.canSkipRound && _celebration == null && !_showResult;
+  }
+
+  Future<void> _askSkipRound() async {
+    final g = e;
+    if (g is! CheckoutChallengeGame || !g.canSkipRound) return;
+    final open = [for (var i = 0; i < g.n; i++) if (!g.done[i]) g.players[i].name];
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: Icon(Icons.skip_next_rounded, color: C.accent, size: 36),
+        title: const Text('Runde wirklich überspringen?'),
+        content: Text(
+          '${open.join(', ')} ${open.length == 1 ? 'hat' : 'haben'} ${g.target} dann nicht geschafft. '
+          'Danach geht es für alle mit der nächsten Zahl weiter.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Überspringen')),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    _pauseToken++;
+    setState(() {
+      _pause = null;
+      _flash = null;
+    });
+    ctl.skipRound();
+    Haptics.medium();
+    _showFlash(e.finished ? 'Runde übersprungen' : 'Runde übersprungen – nächste Zahl');
+    if (e.finished) {
+      // Letzte Runde übersprungen: Spielende wie nach einem Wurf anzeigen.
+      _afterTurn(ThrowEvent(e.results().first.playerIndex)
+        ..turnEnded = true
+        ..gameOver = true);
+      return;
+    }
+    _scheduleBot();
+  }
+
+  Widget _skipBar() => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Material(
+          color: C.surface,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: _busy ? null : _askSkipRound,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.skip_next_rounded, color: C.muted, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Runde überspringen',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: C.muted2),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: C.muted, size: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
   void _scheduleBot() {
     // In gekoppelten Spielen wirft der Bot nur auf dem Host.
     if (ctl.remote || !ctl.botTurn || (_botTimer?.isActive ?? false)) return;
@@ -530,6 +605,7 @@ class _GameScreenState extends State<GameScreen> {
                 children: [
                   _header(),
                   if (_soVisible) _singleOutBar(),
+                  if (_skipVisible) _skipBar(),
                   const SizedBox(height: 8),
                   _activeCard(shown, darts),
                   const SizedBox(height: 8),

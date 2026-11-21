@@ -192,6 +192,19 @@ Widget _setup(String spot) => TutFrame(
         children: [
           _text('X01', size: 18, w: FontWeight.w800),
           const SizedBox(height: 8),
+          Text('MATCH', style: TextStyle(color: C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Spot(
+            on: spot == 'options',
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Wrap(spacing: 6, children: [const MockChip('301'), const MockChip('501', on: true), const MockChip('701')]),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, children: [const MockChip('Double Out', on: true), const MockChip('Single Out')]),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, children: [const MockChip('Legs', on: true), const MockChip('Sets'), const MockChip('First to 3')]),
+            ]),
+          ),
+          const SizedBox(height: 12),
           Text('SPIELER  2 / 8', style: TextStyle(color: C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
           for (final (n, c) in [('Simon', _cA), ('Max', _cB)])
@@ -227,17 +240,6 @@ Widget _setup(String spot) => TutFrame(
             on: spot == 'saved',
             child: Wrap(spacing: 6, runSpacing: 6, children: [
               for (final n in ['Lena', 'Tom', 'Jana', 'Paul']) MockChip(n),
-            ]),
-          ),
-          const SizedBox(height: 10),
-          Spot(
-            on: spot == 'options',
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Wrap(spacing: 6, children: [const MockChip('301'), const MockChip('501', on: true), const MockChip('701')]),
-              const SizedBox(height: 6),
-              Wrap(spacing: 6, children: [const MockChip('Double Out', on: true), const MockChip('Single Out')]),
-              const SizedBox(height: 6),
-              Wrap(spacing: 6, children: [const MockChip('Legs', on: true), const MockChip('Sets'), const MockChip('First to 3')]),
             ]),
           ),
           const SizedBox(height: 16),
@@ -653,7 +655,7 @@ List<TutChapter> buildTutorial() {
       summary: 'Startpunkte, Out-Regel, Legs & Sets, Ausbullen, Bots',
       pages: [
         TutPage('Match einstellen',
-            'Wähle 301, 501 oder 701, Double Out oder Single Out und wie viele Legs (oder Sets) zum Sieg nötig sind.',
+            'Ganz oben wählst du 301, 501 oder 701, Double Out oder Single Out und wie viele Legs (oder Sets) zum Sieg nötig sind. In allen Modi stehen die Regeln oben, darunter die Spieler.',
             (_) => _setup('options')),
         TutPage('Gegen einen Bot',
             'Spielst du allein, kannst du einen Bot hinzufügen – vom Anfänger bis zum Profi oder mit eigenem Average. Das Tempo stellst du in den Einstellungen ein.',

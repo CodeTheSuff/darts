@@ -8,6 +8,7 @@ import 'error_log.dart';
 import '../games/bot.dart';
 import '../games/catalog.dart';
 import '../games/engine.dart';
+import '../games/training.dart';
 import '../games/x01.dart';
 import '../models/dart.dart';
 import '../models/player.dart';
@@ -116,7 +117,9 @@ class MatchController extends ChangeNotifier {
 
   /// Nur echte Felder bzw. bekannte Markierungen zulassen.
   static bool isValidDart(Dart d) {
-    if (d.isControl) return (d.field == -1 && (d.mult == 0 || d.mult == 1)) || (d.field == -2 && d.mult == 1);
+    if (d.isControl) {
+      return (d.field == -1 && (d.mult == 0 || d.mult == 1)) || ((d.field == -2 || d.field == -3) && d.mult == 1);
+    }
     if (d.field == 0) return d.mult == 1;
     if (d.field == 25) return d.mult == 1 || d.mult == 2;
     return d.field >= 1 && d.field <= 20 && d.mult >= 1 && d.mult <= 3;
@@ -198,10 +201,22 @@ class MatchController extends ChangeNotifier {
 
   /// Letzten echten Pfeil entfernen – samt Umschaltungen, die danach kamen.
   void _removeLastDart() {
+    // „Runde überspringen“ allein zurücknehmen – die Würfe davor bleiben.
+    if (darts.isNotEmpty && darts.last.field == Dart.skipRound.field) {
+      darts.removeLast();
+      return;
+    }
     while (darts.isNotEmpty && darts.last.isControl) {
       darts.removeLast();
     }
     if (darts.isNotEmpty) darts.removeLast();
+  }
+
+  /// Checkout-Training/Catch 40: Runde für die, die noch werfen, überspringen.
+  void skipRound() {
+    final e = engine;
+    if (e is! CheckoutChallengeGame || !e.canSkipRound) return;
+    throwDart(Dart.skipRound);
   }
 
   /// Nach dem Sieg um den nächsten Platz weiterspielen (X01, mindestens zwei übrig).

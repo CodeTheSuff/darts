@@ -14,7 +14,7 @@ void main() {
   for (final size in const [Size(412, 915), Size(360, 740)]) {
     testWidgets('X01 und Cricket laufen ohne Layoutfehler (${size.width.toInt()}×${size.height.toInt()})',
         (tester) async {
-      SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.10.0', 'sound': false});
+      SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.10.1', 'sound': false});
       await Store.init();
       tester.view.physicalSize = size * 3;
       tester.view.devicePixelRatio = 3;
@@ -27,6 +27,8 @@ void main() {
       await _tapText(tester, 'X01');
       await tester.pumpAndSettle();
       expect(find.text('Match starten'), findsOneWidget);
+      // Regeln stehen oben – auf kleinen Bildschirmen zu den Spieler-Tasten scrollen
+      await tester.scrollUntilVisible(find.text('+ Bot'), 150, scrollable: find.byType(Scrollable).first);
       expect(find.text('+ Bot'), findsOneWidget);
 
       // Zweiten Spieler anlegen, Match starten, ausbullen

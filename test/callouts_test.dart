@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:darts_counter/data/callouts.dart';
 import 'package:darts_counter/data/match_controller.dart';
 import 'package:darts_counter/data/storage.dart';
+import 'package:darts_counter/games/catalog.dart';
 import 'package:darts_counter/games/engine.dart';
 import 'package:darts_counter/models/dart.dart';
 import 'package:darts_counter/models/player.dart';
@@ -56,6 +57,17 @@ void main() {
     final c = _ctl();
     expect(_sounds(c, const [Dart(1, 1), Dart(1, 2), Dart(1, 3)]), ['1']);
     expect(_sounds(c, const [Dart(1, 1), Dart(1, 1), Dart(20, 1)]), isEmpty);
+  });
+
+  test('Dreimal die 1 in Trainings und Minispielen: keine Ansage', () {
+    for (final mode in ['cricket', 'shanghai', 'atc', 'halveit']) {
+      final c = MatchController(
+        config: GameConfig(mode, Map.of(modeById(mode).defaults)),
+        players: const [GamePlayer('p0', 'P0', 0), GamePlayer('p1', 'P1', 1)],
+      );
+      final out = _sounds(c, const [Dart(1, 1), Dart(1, 1), Dart(1, 1)]);
+      expect(out.contains('1'), isFalse, reason: mode);
+    }
   });
 
   test('Überworfen: kein Zahlen-Sound', () {

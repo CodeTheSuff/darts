@@ -288,6 +288,11 @@ class CheckoutChallengeGame extends GameEngine {
     successes = List.filled(n, 0);
     best = List.filled(n, 0);
     ownTarget = List.filled(n, 121);
+    attempts = List.filled(n, 0);
+    done = List.filled(n, false);
+    rests = List.filled(n, 0);
+    usedOf = List.filled(n, 0);
+    visitStartOf = List.filled(n, 0);
     if (kind == 'training') {
       final range = config.opt<String>('range').split('-').map(int.parse).toList();
       final lo = range[0], hi = range[1];
@@ -301,6 +306,9 @@ class CheckoutChallengeGame extends GameEngine {
     } else {
       roundTargets = const [];
     }
+    for (var i = 0; i < n; i++) {
+      _resetPlayer(i);
+    }
   }
 
   final String kind;
@@ -311,92 +319,149 @@ class CheckoutChallengeGame extends GameEngine {
   late List<int> ownTarget;
   late List<int> roundTargets;
 
-  int target = 0;
-  int rest = 0;
-  int visitStart = 0;
-  int used = 0;
-  int visitIndex = 0; // Index in [turn], an dem die aktuelle Aufnahme beginnt
+  /// 121: abgeschlossene Versuche je Spieler.
+  late List<int> attempts;
+
+  /// Checkout-Training/Catch 40: Spieler ist mit der Zahl dieser Runde fertig.
+  late List<bool> done;
+
+  /// Laufender Versuch je Spieler (es wird abwechselnd mit je 3 Darts geworfen).
+  late List<int> rests;
+  late List<int> usedOf;
+  late List<int> visitStartOf;
+
+  /// Checkout-Training/Catch 40: aktuelle Runde (gemeinsame Zahl für alle).
+  int stage = 1;
 
   int get allowed => kind == 'catch40' ? 6 : 9;
 
-  @override
-  int get dartsPerTurn => 999; // Ende wird selbst gesteuert
+  /// Alle spielen dieselbe Zahl und warten aufeinander (nicht bei 121).
+  bool get sharedRounds => kind != '121';
 
-  @override
-  void onTurnStart() {
-    target = kind == '121' ? ownTarget[cur] : roundTargets[min(round, rounds) - 1];
-    rest = target;
-    visitStart = target;
-    used = 0;
-    visitIndex = 0;
+  int targetOf(int p) => kind == '121' ? ownTarget[p] : roundTargets[min(stage, rounds) - 1];
+  int get target => targetOf(cur);
+  int get rest => rests[cur];
+  int get used => usedOf[cur];
+
+  /// Mindestens einer ist mit der Zahl fertig, andere werfen noch: Runde darf übersprungen werden.
+  bool get canSkipRound => sharedRounds && !finished && done.any((d) => d) && !done.every((d) => d);
+
+  void _resetPlayer(int p) {
+    rests[p] = targetOf(p);
+    usedOf[p] = 0;
+    visitStartOf[p] = rests[p];
+  }
+
+  void _nextStage() {
+    stage++;
+    if (stage > rounds) {
+      finishGame();
+      return;
+    }
+    for (var i = 0; i < n; i++) {
+      done[i] = false;
+      _resetPlayer(i);
+    }
   }
 
   @override
-  void onNewRound() {
-    if (round > rounds) finishGame();
+  bool isOut(int i) => sharedRounds ? done[i] : attempts[i] >= rounds;
+
+  @override
+  void onTurnStart() => visitStartOf[cur] = rests[cur];
+
+  /// Runden steuert das Spiel selbst ([stage] bzw. [attempts]).
+  @override
+  void onNewRound() {}
+
+  /// „Runde überspringen“: Wer noch wirft, hat die Zahl nicht geschafft – weiter mit der nächsten.
+  @override
+  void onControl(Dart d) {
+    if (d.field != Dart.skipRound.field || !canSkipRound) return;
+    if (turn.isNotEmpty) {
+      lastTurns[cur] = List.of(turn);
+      turn = [];
+    }
+    _nextStage();
+    if (!finished) {
+      cur = roundStarter;
+      onTurnStart();
+    }
   }
 
   @override
   void onDart(Dart d, ThrowEvent ev) {
-    used++;
-    final r = rest - d.value;
+    final p = cur;
+    usedOf[p]++;
+    final r = rests[p] - d.value;
     final bust = r < 0 || r == 1 || (r == 0 && !d.isDouble);
     if (bust) {
-      rest = visitStart;
-      used = ((used + 2) ~/ 3) * 3;
-      visitIndex = turn.length;
+      rests[p] = visitStartOf[p];
+      usedOf[p] = ((usedOf[p] + 2) ~/ 3) * 3;
       ev.bust = true;
-      ev.message = 'Bust! Zurück auf $visitStart';
-      if (used >= allowed) _finishAttempt(ev, false);
+      ev.message = 'Bust! Zurück auf ${visitStartOf[p]}';
+      if (usedOf[p] >= allowed) {
+        _finishAttempt(ev, false);
+      } else {
+        endTurn(ev);
+      }
       return;
     }
     if (r == 0) {
       _finishAttempt(ev, true);
       return;
     }
-    rest = r;
-    if (used % 3 == 0) {
-      visitStart = rest;
-      visitIndex = turn.length;
-    }
-    if (used >= allowed) _finishAttempt(ev, false);
+    rests[p] = r;
+    if (usedOf[p] >= allowed) _finishAttempt(ev, false);
   }
 
   void _finishAttempt(ThrowEvent ev, bool success) {
     final p = cur;
     final name = players[p].name;
+    final t = targetOf(p);
+    final darts = usedOf[p];
     if (success) {
       successes[p]++;
       switch (kind) {
         case 'training':
           score[p]++;
-          ev.message = '$name checkt $target in $used Darts!';
+          ev.message = '$name checkt $t in $darts Darts!';
         case '121':
-          if (target > best[p]) best[p] = target;
-          score[p] = max(score[p], target);
-          ownTarget[p] = target + 1;
-          ev.message = '$name checkt $target! Weiter mit ${target + 1}';
+          if (t > best[p]) best[p] = t;
+          score[p] = max(score[p], t);
+          ownTarget[p] = t + 1;
+          ev.message = '$name checkt $t! Weiter mit ${t + 1}';
         case 'catch40':
-          final pts = used <= 2 ? 3 : used == 3 ? 2 : 1;
+          final pts = darts <= 2 ? 3 : darts == 3 ? 2 : 1;
           score[p] += pts;
-          ev.message = '$name checkt $target: +$pts';
+          ev.message = '$name checkt $t: +$pts';
       }
-      ev.celebration = target >= 100 ? Celebration.highFinish : Celebration.legWon;
-      ev.celebrationValue = target;
+      ev.celebration = t >= 100 ? Celebration.highFinish : Celebration.legWon;
+      ev.celebrationValue = t;
     } else {
       switch (kind) {
         case '121':
           ownTarget[p] = 121;
-          ev.message = '$name schafft $target nicht – zurück auf 121';
+          ev.message = '$name schafft $t nicht – zurück auf 121';
         default:
-          ev.message = '$name schafft $target nicht';
+          ev.message = '$name schafft $t nicht';
       }
     }
-    endTurn(ev);
+    if (!sharedRounds) {
+      attempts[p]++;
+      _resetPlayer(p);
+      endTurn(ev);
+      return;
+    }
+    done[p] = true;
+    if (done.every((d) => d)) {
+      // Alle fertig: nächste Zahl, wieder beginnt der Anwerfer.
+      _nextStage();
+      endTurn(ev, next: finished ? null : roundStarter);
+    } else {
+      endTurn(ev);
+    }
   }
-
-  @override
-  List<Dart> get visibleTurn => turn.sublist(min(visitIndex, turn.length));
 
   @override
   bool get showTurnSum => true;
@@ -410,8 +475,8 @@ class CheckoutChallengeGame extends GameEngine {
 
   @override
   String get subtitle {
-    final r = min(round, rounds);
-    return 'Runde $r / $rounds · Ziel $target · Dart ${min(used + 1, allowed)}/$allowed';
+    final r = sharedRounds ? min(stage, rounds) : min(attempts[cur] + 1, rounds);
+    return '${sharedRounds ? 'Runde' : 'Versuch'} $r / $rounds · Ziel $target · Dart ${min(used + 1, allowed)}/$allowed';
   }
 
   @override
@@ -422,7 +487,7 @@ class CheckoutChallengeGame extends GameEngine {
       case 'catch40':
         return '${score[i]} P';
       default:
-        return '${score[i]}/${min(round, rounds)}';
+        return '${score[i]}/${min(stage, rounds)}';
     }
   }
 
@@ -430,11 +495,16 @@ class CheckoutChallengeGame extends GameEngine {
   String activeValue() => '$rest';
 
   @override
-  String? subLine(int i) => switch (kind) {
-        '121' => 'Bestes: ${best[i] == 0 ? '–' : best[i]} · Checks ${successes[i]}',
-        'catch40' => 'Checks ${successes[i]}',
-        _ => 'Checks ${successes[i]}',
-      };
+  String? subLine(int i) {
+    final base = switch (kind) {
+      '121' => 'Bestes: ${best[i] == 0 ? '–' : best[i]} · Checks ${successes[i]}',
+      _ => 'Checks ${successes[i]}',
+    };
+    if (sharedRounds && done[i]) return '$base · fertig';
+    // Rest nur bei den anderen – beim Spieler am Wurf steht er schon groß.
+    if (usedOf[i] > 0 && i != cur) return '$base · Rest ${rests[i]}';
+    return base;
+  }
 
   @override
   String lastLine(int i) {

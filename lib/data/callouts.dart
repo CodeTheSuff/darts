@@ -54,7 +54,8 @@ class Callouts {
     if (d.field == 25 && d.mult == 2) out.add('bullseye');
     if (ev.turnEnded) {
       final darts = ev.turnDarts;
-      if (darts.length == 3 && darts.every((x) => x.field == 1)) {
+      // „1“ nur im X01-Match bzw. Turnierspiel, nicht in Trainings und Minispielen.
+      if (e is X01Game && darts.length == 3 && darts.every((x) => x.field == 1)) {
         out.add('1');
       } else if (e is X01Game && !ev.bust) {
         final score = sumOf(darts);
