@@ -384,7 +384,13 @@ class X01Game extends GameEngine {
   String mainValue(int i) => '${scores[i]}';
 
   @override
-  String? subLine(int i) => 'Ø ${fmt1(stats[i].average)} · ${stats[i].darts} Darts';
+  String? subLine(int i) => 'Ø ${fmt1(legAverage(i))} · ${legDarts[i]} Darts';
+
+  /// 3-Dart-Average nur im laufenden Leg (Bust-Darts zählen mit 0 Punkten).
+  double legAverage(int i) => legDarts[i] == 0 ? 0 : (start - scores[i]) / legDarts[i] * 3;
+
+  @override
+  String? cardStat(int i) => 'Ø ${fmt1(legAverage(i))}';
 
   @override
   String lastLine(int i) {

@@ -60,8 +60,28 @@ class Spot extends StatelessWidget {
 
 /// Eine Taste wie im Tastenblock.
 class MockKey extends StatelessWidget {
-  const MockKey(this.label, {super.key, this.tone, this.spot = false, this.filled = false, this.flex = 1, this.height = 40});
+  const MockKey(this.label,
+      {super.key,
+      this.tone,
+      this.spot = false,
+      this.filled = false,
+      this.flex = 1,
+      this.height = 40,
+      this.prefix,
+      this.dim = false,
+      this.light = false,
+      this.fontSize = 15});
   final String label;
+  final double fontSize;
+
+  /// Kleines D/T vor der Zahl (in Tastenfarbe), die Zahl bleibt weiß.
+  final String? prefix;
+
+  /// Gesperrt (abgedunkelt).
+  final bool dim;
+
+  /// Etwas heller (Zurück-Taste).
+  final bool light;
   final Color? tone;
   final bool spot;
   final bool filled;
@@ -78,25 +98,45 @@ class MockKey extends StatelessWidget {
         child: Spot(
           on: spot,
           radius: 10,
-          child: Container(
-            height: height,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: filled && t != null
-                  ? t
-                  : t != null
-                      ? Color.alphaBlend(t.withValues(alpha: 0.12), C.surface2)
-                      : C.surface2,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: t?.withValues(alpha: 0.5) ?? C.border),
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(label,
+          child: Opacity(
+            opacity: dim ? 0.35 : 1,
+            child: Container(
+              height: height,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: dim
+                    ? C.surface2
+                    : filled && t != null
+                        ? t
+                        : t != null
+                            ? Color.alphaBlend(t.withValues(alpha: 0.12), C.surface2)
+                            : light
+                                ? C.surface3
+                                : C.surface2,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: dim ? C.border : t?.withValues(alpha: 0.5) ?? (light ? C.line : C.border)),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text.rich(
+                  TextSpan(children: [
+                    if (prefix != null) TextSpan(text: prefix, style: TextStyle(fontSize: 10, color: t ?? C.text)),
+                    TextSpan(text: label),
+                  ]),
                   style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                      color: filled ? const Color(0xFF0B0E1A) : (t ?? C.text))),
+                    fontWeight: FontWeight.w800,
+                    fontSize: fontSize,
+                    color: dim
+                        ? C.text
+                        : filled
+                            ? const Color(0xFF0B0E1A)
+                            : prefix != null
+                                ? C.text
+                                : (t ?? C.text),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

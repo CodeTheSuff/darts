@@ -389,6 +389,9 @@ class HighScoreGame extends GameEngine {
       'Ø ${fmt1(darts[i] == 0 ? 0 : scores[i] / darts[i] * 3)}';
 
   @override
+  String? cardStat(int i) => subLine(i);
+
+  @override
   List<PlayerResult> results() {
     final list = [
       for (var i = 0; i < n; i++)

@@ -217,7 +217,7 @@ class _PlayerRow extends StatelessWidget {
     final legs = e.legsToWin;
     final sets = e.setsToWin;
     final g = e;
-    final avg = g is X01Game ? 'Ø ${fmt1(g.stats[i].average)}' : e.subLine(i);
+    final avg = g is X01Game ? 'Ø ${fmt1(g.legAverage(i))}' : e.subLine(i);
     final info = [
       if (sets != null) 'Sets ${e.setsOf(i)}',
       if (legs != null) 'Legs ${e.legsOf(i)}',

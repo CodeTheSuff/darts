@@ -251,40 +251,88 @@ Widget _setup(String spot) => TutFrame(
       ),
     );
 
-Widget _keypad(String spot, {String? hint}) => TutFrame(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          MockPlayer('Simon', '121', _cA, active: true, sub: 'Ø 60,0 · 3 Darts', spot: spot == 'score'),
-          const SizedBox(height: 6),
-          Row(children: [
-            MockKey('T20', spot: spot == 'turn'),
-            MockKey('–', spot: spot == 'turn'),
-            MockKey('–', spot: spot == 'turn'),
-          ]),
-          const SizedBox(height: 6),
-          if (hint != null) ...[MockHint('CHECKOUT', hint, spot: spot == 'checkout'), const SizedBox(height: 6)],
-          Row(children: [
-            MockKey('Double ×2', tone: C.dbl, spot: spot == 'double', filled: spot == 'double'),
-            MockKey('Triple ×3', tone: C.trp, spot: spot == 'triple', filled: spot == 'triple'),
-          ]),
-          for (var r = 0; r < 4; r++)
-            Row(children: [
-              for (var c = 1; c <= 5; c++)
-                MockKey(
-                  '${spot == 'double' ? 'D' : spot == 'triple' ? 'T' : ''}${r * 5 + c}',
-                  spot: spot == 'numbers' && r * 5 + c == 20,
-                  height: 34,
-                ),
-            ]),
-          Row(children: [
-            MockKey(spot == 'double' ? 'Bull 50' : 'Bull 25', spot: spot == 'bull'),
-            MockKey('Miss', tone: C.miss, spot: spot == 'miss'),
-            MockKey('Undo', spot: spot == 'undo'),
-          ]),
-        ],
-      ),
-    );
+Widget _keypad(String spot, {List<String>? checkout}) {
+  final m = spot == 'double' ? 2 : spot == 'triple' ? 3 : 1;
+  final tone = m == 2 ? C.dbl : m == 3 ? C.trp : null;
+  final pre = m == 2 ? 'D' : m == 3 ? 'T' : null;
+  Color seg(String s) => s == 'Bull' || s.startsWith('D') ? C.dbl : s.startsWith('T') ? C.trp : C.text;
+  Widget side(MockKey k) => Row(children: [k]);
+  return TutFrame(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MockPlayer('Simon', '121', _cA, active: true, sub: 'Ø 60,0 · Letzte 60', spot: spot == 'score'),
+        const SizedBox(height: 6),
+        Row(children: [
+          MockKey('T20', spot: spot == 'turn', height: 32),
+          MockKey('–', spot: spot == 'turn', height: 32),
+          MockKey('–', spot: spot == 'turn', height: 32),
+        ]),
+        Spot(
+          on: spot == 'checkout',
+          radius: 10,
+          child: Container(
+            height: 32,
+            margin: const EdgeInsets.all(2.5),
+            decoration: BoxDecoration(
+              color: C.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: C.line),
+            ),
+            child: checkout == null
+                ? Center(
+                    child: Text('Noch kein Finish möglich',
+                        style: TextStyle(color: C.muted, fontSize: 12, fontWeight: FontWeight.w700)))
+                : Row(children: [
+                    for (var i = 0; i < checkout.length; i++) ...[
+                      if (i > 0) Container(width: 1, height: 18, color: C.line),
+                      Expanded(
+                        child: Center(
+                          child: Text(checkout[i],
+                              style: TextStyle(color: seg(checkout[i]), fontSize: 14, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ],
+                  ]),
+          ),
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 4,
+              child: Column(children: [
+                for (var r = 0; r < 5; r++)
+                  Row(children: [
+                    for (var c = 1; c <= 4; c++)
+                      MockKey(
+                        '${r * 4 + c}',
+                        prefix: pre,
+                        tone: tone,
+                        spot: spot == 'numbers' && r * 4 + c == 20,
+                        height: 30,
+                      ),
+                  ]),
+              ]),
+            ),
+            Expanded(
+              child: Column(children: [
+                side(MockKey('‹', light: true, height: 65, fontSize: 34, spot: spot == 'undo')),
+                side(MockKey('0', tone: C.miss, height: 30, dim: m > 1, spot: spot == 'undo')),
+                side(MockKey('25', tone: C.dbl, height: 30, dim: m > 1, spot: spot == 'bull')),
+                side(MockKey('50', tone: C.trp, height: 30, dim: m > 1, spot: spot == 'bull')),
+              ]),
+            ),
+          ],
+        ),
+        Row(children: [
+          MockKey('Double', tone: C.dbl, spot: spot == 'double', filled: spot == 'double', height: 34),
+          MockKey('Triple', tone: C.trp, spot: spot == 'triple', filled: spot == 'triple', height: 34),
+        ]),
+      ],
+    ),
+  );
+}
 
 Widget _bullOff() => TutFrame(
       child: Column(
@@ -627,23 +675,23 @@ List<TutChapter> buildTutorial() {
       id: 'input',
       title: 'Punkte eintragen',
       icon: Icons.dialpad_rounded,
-      summary: 'Tastenblock, Double/Triple, Bull, Undo, Checkout',
+      summary: 'Tastenblock, Double/Triple, Bull, Zurück, Checkout',
       pages: [
         TutPage('Jeder Pfeil einzeln',
-            'Tippe für jeden Pfeil das getroffene Feld. Oben siehst du die Restpunkte, darunter die drei Pfeile der aktuellen Aufnahme.',
+            'Tippe für jeden Pfeil das getroffene Feld. Oben siehst du die Restpunkte, rechts daneben deinen Average im laufenden Leg und die letzte Aufnahme, darunter die drei Pfeile der aktuellen Aufnahme. Den Average über das ganze Spiel zeigt die Zusammenfassung am Ende.',
             (_) => _keypad('numbers')),
         TutPage('Double und Triple',
-            'Erst „Double“ oder „Triple“ antippen, dann die Zahl. Danach springt der Tastenblock automatisch zurück auf Single.',
+            'Erst „Double“ oder „Triple“ unten antippen, dann die Zahl – die Tasten zeigen dann D bzw. T, 0, 25 und 50 sind solange gesperrt. Nach dem Pfeil springt der Tastenblock automatisch zurück auf Single, nochmal Antippen hebt die Auswahl auf.',
             (_) => _keypad('double')),
         TutPage('Bull',
-            'Unten links: Bull 25. Mit „Double“ davor wird daraus Bull 50 (Bullseye).',
+            'Rechts unten: 25 (grün) für das einfache Bull, 50 (orange) für das Bullseye.',
             (_) => _keypad('bull')),
         TutPage('Daneben und Rückgängig',
-            '„Miss“ für einen Pfeil außerhalb der Punkte. „Undo“ nimmt den letzten Pfeil zurück – beliebig oft.',
+            'Die rote 0 für einen Pfeil außerhalb der Punkte. Die Zurück-Taste ‹ oben rechts nimmt den letzten Pfeil zurück – beliebig oft. Trainings mit großen Treffer-Tasten haben stattdessen „Miss“.',
             (_) => _keypad('undo')),
         TutPage('Checkout-Vorschlag',
-            'Ist ein Finish möglich, zeigt die App den besten Weg. Geht es gerade nicht, schlägt sie vor, worauf du dir einen guten Rest stellst.',
-            (_) => _keypad('checkout', hint: '121 · T20 T11 D14')),
+            'Ist ein Finish möglich, zeigt das Feld unter den Pfeilen den besten Weg – ein Bereich pro Dart: Double grün, Triple orange, Single weiß. Geht es gerade nicht, schlägt die App vor, worauf du dir einen guten Rest stellst.',
+            (_) => _keypad('checkout', checkout: const ['T20', 'T11', 'D14'])),
         TutPage('Single Out als Notlösung',
             'Hängt jemand im Double fest, bietet die App an, das Leg mit Single Out zu beenden. Abschaltbar in den Einstellungen.',
             (_) => const TutFrame(

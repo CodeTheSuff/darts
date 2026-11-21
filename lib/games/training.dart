@@ -542,6 +542,9 @@ class ScoringGame extends GameEngine {
   String? subLine(int i) => 'Ø ${fmt1(avg(i))} · ${thrown[i]}/$total Darts';
 
   @override
+  String? cardStat(int i) => 'Ø ${fmt1(avg(i))}';
+
+  @override
   Hint? get hint {
     final left = total - thrown[cur];
     final rate = thrown[cur] == 0 ? 0 : (triples[cur] / thrown[cur] * 100).round();

@@ -9,10 +9,15 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.9.2';
+const appVersion = '2.10.0';
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '2.10.0': [
+    (Icons.dialpad_rounded, 'Neue Eingabe im Spiel', 'Zahlen in 4 Spalten, rechts Zurück, 0, 25 und 50 – Double/Triple unten, die Tasten zeigen dann D bzw. T'),
+    (Icons.flag_rounded, 'Finish-Feld pro Dart', 'Der Finish-Weg steht in einem Bereich je Dart: Double grün, Triple orange, Single weiß'),
+    (Icons.speed_rounded, 'Average pro Leg', 'Im Spiel zählt der Average nur das laufende Leg, die Endzusammenfassung weiter das ganze Spiel'),
+  ],
   '2.9.2': [
     (Icons.tv_rounded, 'Neuer Wartebildschirm der Anzeige', 'Schwarz mit leuchtendem Logo, bis am Handy ein Spiel oder Turnier startet'),
   ],

@@ -239,6 +239,9 @@ abstract class GameEngine {
   String mainValue(int i);
   String activeValue() => mainValue(cur);
   String? subLine(int i) => null;
+
+  /// Große Kennzahl rechts in der Karte am Wurf (z. B. „Ø 45,3“), sonst null.
+  String? cardStat(int i) => null;
   String lastLine(int i) {
     final t = lastTurns[i];
     if (t.isEmpty) return '–';

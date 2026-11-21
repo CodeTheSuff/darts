@@ -730,50 +730,121 @@ class _GameScreenState extends State<GameScreen> {
     final value = _pause == null ? e.activeValue() : e.mainValue(p);
     final boardSize = min(146.0, MediaQuery.sizeOf(context).width * 0.37);
     final isBot = ctl.isBot(p);
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color.alphaBlend(color.withValues(alpha: 0.16), C.surface), C.surface],
+    // Bei voller Zahleneingabe keine Scheibe: rechts stehen Ø und letzte Aufnahme.
+    final compact = e.input.kind == InputKind.full;
+    final stat = e.cardStat(p);
+    final sub = e.subLine(p);
+
+    final nameRow = Row(
+      children: [
+        if (isBot) ...[Icon(Icons.smart_toy_rounded, size: 18, color: color), const SizedBox(width: 6)],
+        Flexible(
+          child: Text(
+            e.players[p].name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
         ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: color, width: 2),
-        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 28)],
-      ),
-      child: Row(
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            isBot && _pause == null ? 'WIRFT …' : 'AM WURF',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: color),
+          ),
+        ),
+      ],
+    );
+
+    final Widget body;
+    if (compact) {
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            flex: 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                nameRow,
+                SizedBox(
+                  height: 68,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.bottomLeft,
+                    child: _scoreText(value, 76),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (stat != null)
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        stat,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                          color: C.text,
+                          fontFeatures: tabular,
+                        ),
+                      ),
+                    )
+                  else if (sub != null)
+                    Text(
+                      sub,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 15, color: C.muted2, fontWeight: FontWeight.w700),
+                    ),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (e.legsToWin != null) ...[_progress(p), const SizedBox(width: 2)],
+                        Text(
+                          'Letzte ${e.lastLine(p)}',
+                          maxLines: 1,
+                          style: TextStyle(fontSize: 17, color: C.muted, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      body = Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    if (isBot) ...[Icon(Icons.smart_toy_rounded, size: 18, color: color), const SizedBox(width: 6)],
-                    Flexible(
-                      child: Text(
-                        e.players[p].name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        isBot && _pause == null ? 'WIRFT …' : 'AM WURF',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: color),
-                      ),
-                    ),
-                  ],
-                ),
+                nameRow,
                 SizedBox(
                   height: 86,
                   child: FittedBox(
@@ -782,9 +853,9 @@ class _GameScreenState extends State<GameScreen> {
                     child: _scoreText(value, 92),
                   ),
                 ),
-                if (e.subLine(p) != null)
+                if (sub != null)
                   Text(
-                    e.subLine(p)!,
+                    sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 13, color: C.muted, fontWeight: FontWeight.w600),
@@ -813,7 +884,23 @@ class _GameScreenState extends State<GameScreen> {
           ),
           Dartboard(size: boardSize, darts: darts, color: color, targets: _pause == null ? e.targets : const []),
         ],
+      );
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: compact ? const EdgeInsets.fromLTRB(16, 12, 14, 10) : const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color.alphaBlend(color.withValues(alpha: 0.16), C.surface), C.surface],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: color, width: 2),
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 28)],
       ),
+      child: body,
     );
   }
 
@@ -941,33 +1028,70 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  /// Farbe eines Checkout-Felds: Double (und Bull) grün, Triple orange, Single weiß.
+  Color _segColor(String seg) {
+    if (seg == 'Bull' || seg.startsWith('D')) return C.dbl;
+    if (seg.startsWith('T')) return C.trp;
+    return C.text;
+  }
+
   Widget _hintBar() {
     final color = _color(_pause?.player ?? e.cur);
-    Color bg;
-    Color fg;
+    var bg = C.surface;
+    var border = C.line;
     Widget child;
     if (_flash != null) {
-      bg = _flashBad ? C.danger.withValues(alpha: 0.14) : color.withValues(alpha: 0.14);
-      fg = _flashBad ? const Color(0xFFFF9494) : color;
+      final tone = _flashBad ? C.danger : color;
+      bg = Color.alphaBlend(tone.withValues(alpha: 0.14), C.surface);
+      border = tone.withValues(alpha: 0.5);
       child = Text(
         _flash!,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 14),
+        style: TextStyle(
+          color: _flashBad ? const Color(0xFFFF9494) : color,
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+        ),
       );
     } else {
       var h = _pause == null ? e.hint : null;
       if (h != null && (h.label == 'Checkout' || h.label == 'Stellen') && !Store.checkoutHint) h = null;
       if (h == null) {
-        bg = C.surface;
-        fg = C.muted;
         child = Text(
           _pause != null ? 'Nächster Spieler …' : (ctl.botTurn ? 'Bot ist am Wurf …' : ' '),
-          style: TextStyle(color: C.muted, fontWeight: FontWeight.w600, fontSize: 14),
+          style: TextStyle(color: C.muted, fontWeight: FontWeight.w600, fontSize: 15),
+        );
+      } else if (h.label == 'Checkout') {
+        // Ein gleich großer Bereich pro Dart des Finish-Wegs.
+        final segs = h.text.split(' · ');
+        child = Row(
+          children: [
+            for (var i = 0; i < segs.length; i++) ...[
+              if (i > 0) Container(width: 1, height: 26, color: C.line),
+              Expanded(
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      segs[i],
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: _segColor(segs[i]),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: tabular,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         );
       } else {
-        bg = h.strong ? color.withValues(alpha: 0.12) : C.surface;
-        fg = h.strong ? color : C.muted;
+        final fg = h.strong ? color : C.muted;
+        if (h.strong) bg = Color.alphaBlend(color.withValues(alpha: 0.12), C.surface);
         child = Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -989,8 +1113,8 @@ class _GameScreenState extends State<GameScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: fg,
-                  fontSize: h.strong ? 17 : 14,
+                  color: h.strong ? fg : (h.label == null ? C.muted : C.muted2),
+                  fontSize: h.strong ? 17 : 15,
                   fontWeight: FontWeight.w700,
                   fontFeatures: tabular,
                 ),
@@ -1002,9 +1126,13 @@ class _GameScreenState extends State<GameScreen> {
     }
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      height: 40,
+      height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border, width: 1.5),
+      ),
       alignment: Alignment.center,
       child: child,
     );

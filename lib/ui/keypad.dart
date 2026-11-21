@@ -6,7 +6,7 @@ import '../games/engine.dart';
 import 'theme.dart';
 
 /// Eingabe pro Pfeil. Je nach Modus ([InputSpec]):
-/// - full:    Double/Triple-Schalter (sonst Single), Zahlen 1–20, Bull, Miss, Undo
+/// - full:    Zahlen 1–20 in 4 Spalten, rechts Zurück, 0, 25, 50; unten Double/Triple
 ///            (optional fest auf Double oder Triple eingestellt)
 /// - numbers: nur bestimmte Zahlen (z. B. Cricket 15–20 + Bull) mit Schaltern
 /// - buttons: wenige große Treffer-Tasten + Miss (z. B. Around the Clock)
@@ -67,224 +67,288 @@ class _KeypadState extends State<Keypad> {
         child: Padding(padding: const EdgeInsets.all(gap / 2), child: child),
       );
 
-  Widget _toggleBtn(String label, String sub, int m, Color color, Color dark) {
+  /// Getönter Hintergrund für farbige Tasten (0, 25, 50, Double, Triple).
+  static Color _tint(Color c, [double a = 0.13]) => Color.alphaBlend(c.withValues(alpha: a), C.surface2);
+
+  Widget _toggleBtn(String label, int m, Color color, Color dark) {
     final on = _mult == m;
     return Expanded(
-      child: Key3(
-        semantics: '$label${on ? ' aktiv' : ''}',
-        onTap: () => _toggle(m),
-        color: on ? color : C.surface,
-        borderColor: on ? color : color.withValues(alpha: 0.4),
-        radius: 16,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (C.cb) ...[
-              Icon(multIcon(m), size: 18, color: on ? dark : color),
-              const SizedBox(width: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(gap / 2),
+        child: Key3(
+          semantics: '$label${on ? ' aktiv' : ''}',
+          onTap: () => _toggle(m),
+          color: on ? color : _tint(color, 0.10),
+          borderColor: on ? color : color.withValues(alpha: 0.6),
+          radius: 16,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (C.cb) ...[
+                Icon(multIcon(m), size: 18, color: on ? dark : color),
+                const SizedBox(width: 6),
+              ],
+              Text(label, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: on ? dark : color)),
             ],
-            Text(label,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: on ? dark : color)),
-            const SizedBox(width: 6),
-            Text(sub,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: (on ? dark : color).withValues(alpha: 0.8))),
-          ],
+          ),
         ),
       ),
     );
   }
 
   Widget _toggles() => SizedBox(
-        height: 52,
+        height: 52 + gap,
         child: Row(
           children: [
-            _toggleBtn('Double', '×2', 2, C.dbl, const Color(0xFF06150D)),
-            const SizedBox(width: 8),
-            _toggleBtn('Triple', '×3', 3, C.trp, const Color(0xFF2A1203)),
+            _toggleBtn('Double', 2, C.dbl, const Color(0xFF06150D)),
+            _toggleBtn('Triple', 3, C.trp, const Color(0xFF2A1203)),
           ],
         ),
       );
 
-  Widget _titleBar(String text, Color tone) => Container(
-        height: 44,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: tone.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: tone.withValues(alpha: 0.35)),
+  Widget _titleBar(String text, Color tone) => Padding(
+        padding: const EdgeInsets.all(gap / 2),
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: tone.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: tone.withValues(alpha: 0.5)),
+          ),
+          child: Text(text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 15)),
         ),
-        child: Text(text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: tone, fontWeight: FontWeight.w800, fontSize: 15)),
       );
 
   ({Color bg, Color border, Color? tone, String prefix}) _style() {
     final m = _effMult;
     final tone = m == 2 ? C.dbl : m == 3 ? C.trp : null;
     return (
-      bg: tone != null ? Color.alphaBlend(tone.withValues(alpha: 0.10), C.surface2) : C.surface2,
-      border: tone != null ? tone.withValues(alpha: 0.35) : C.border,
+      bg: tone != null ? _tint(tone, 0.14) : C.surface2,
+      border: tone != null ? tone.withValues(alpha: 0.45) : C.border,
       tone: tone,
       prefix: m == 2 ? 'D' : m == 3 ? 'T' : '',
     );
   }
 
-  Widget _numKey(int n, {double fontSize = 22}) {
+  /// Zahlentaste 1–20; bei aktivem Double/Triple mit Präfix D bzw. T in Tastenfarbe.
+  Widget _numKey(int n, {double fontSize = 30}) {
     final s = _style();
     final m = _effMult;
-    final isBull = n == 25;
     return _pad(Key3(
-      semantics: isBull
-          ? (m == 2 ? 'Bullseye 50' : '25')
-          : '${m == 2 ? 'Double ' : m == 3 ? 'Triple ' : ''}$n',
-      enabled: !(isBull && m == 3),
+      semantics: '${m == 2 ? 'Double ' : m == 3 ? 'Triple ' : ''}$n',
       onTap: () => _hit(n),
       color: s.bg,
       borderColor: s.border,
-      child: isBull
-          ? Text(m == 2 ? 'Bull 50' : 'Bull 25',
-              style: TextStyle(fontSize: fontSize * 0.75, fontWeight: FontWeight.w800))
-          : Text.rich(
-              TextSpan(children: [
-                if (C.cb && multIcon(m) != null && m > 0)
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: Icon(multIcon(m), size: fontSize * 0.5, color: s.tone),
-                    ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text.rich(
+            TextSpan(children: [
+              if (C.cb && m > 1)
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Icon(multIcon(m), size: fontSize * 0.45, color: s.tone),
                   ),
-                if (s.prefix.isNotEmpty)
-                  TextSpan(
-                      text: s.prefix,
-                      style: TextStyle(fontSize: fontSize * 0.55, fontWeight: FontWeight.w800, color: s.tone)),
-                TextSpan(text: '$n'),
-              ]),
-              style: TextStyle(
-                  fontSize: fontSize, fontWeight: FontWeight.w700, color: C.text, fontFeatures: tabular),
-            ),
+                ),
+              if (s.prefix.isNotEmpty)
+                TextSpan(
+                  text: s.prefix,
+                  style: TextStyle(fontSize: fontSize * 0.55, fontWeight: FontWeight.w800, color: s.tone),
+                ),
+              TextSpan(text: '$n'),
+            ]),
+            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w700, color: C.text, fontFeatures: tabular),
+          ),
+        ),
+      ),
     ));
   }
 
-  /// Miss ist immer rot.
-  Widget _missKey({int flex = 1}) => _pad(
+  /// Farbige Sondertaste (0 rot, 25 grün, 50 orange). Gesperrt: abgedunkelt und neutral.
+  Widget _colorKey({
+    required String label,
+    required String semantics,
+    required Color tone,
+    required VoidCallback onTap,
+    bool enabled = true,
+    IconData? cbIcon,
+    double fontSize = 30,
+    int flex = 1,
+  }) =>
+      _pad(
         Key3(
-          semantics: 'Miss',
-          onTap: () => _hit(0),
-          color: Color.alphaBlend(C.miss.withValues(alpha: 0.12), C.surface2),
-          borderColor: C.miss.withValues(alpha: 0.6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (C.cb) ...[Icon(Icons.close_rounded, size: 18, color: C.miss), const SizedBox(width: 4)],
-              Text('Miss', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: C.miss)),
-            ],
+          semantics: semantics,
+          enabled: enabled,
+          onTap: onTap,
+          color: enabled ? _tint(tone) : C.surface2,
+          borderColor: enabled ? tone.withValues(alpha: 0.6) : C.border,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (C.cb && cbIcon != null) ...[
+                    Icon(cbIcon, size: fontSize * 0.6, color: enabled ? tone : C.text),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w800,
+                      color: enabled ? tone : C.text,
+                      fontFeatures: tabular,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         flex: flex,
       );
 
-  Widget _undoKey() => _pad(Key3(
-        semantics: 'Letzten Pfeil rückgängig machen',
-        enabled: widget.canUndo,
-        onTap: () {
-          Haptics.medium();
-          setState(() => _mult = 1);
-          widget.onUndo();
-        },
-        color: C.surface3,
-        borderColor: C.line,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.undo_rounded, size: 20, color: C.text),
-            SizedBox(width: 6),
-            Text('Undo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          ],
+  /// Miss bzw. 0 ist immer rot.
+  Widget _missKey({String label = '0', int flex = 1, bool enabled = true, double fontSize = 30}) => _colorKey(
+        label: label,
+        semantics: 'Miss',
+        tone: C.miss,
+        cbIcon: Icons.close_rounded,
+        enabled: enabled,
+        fontSize: fontSize,
+        flex: flex,
+        onTap: () => _hit(0),
+      );
+
+  /// Bull als feste Taste: 25 grün, 50 (Bullseye) orange.
+  Widget _bullKey(int mult, {bool enabled = true, double fontSize = 30}) => _colorKey(
+        label: mult == 2 ? '50' : '25',
+        semantics: mult == 2 ? 'Bullseye 50' : '25',
+        tone: mult == 2 ? C.trp : C.dbl,
+        enabled: enabled,
+        fontSize: fontSize,
+        onTap: () => _hit(25, mult),
+      );
+
+  /// Zurück-Taste (letzten Pfeil rückgängig), etwas heller als die Zahlentasten.
+  Widget _undoKey({int flex = 1}) => _pad(
+        Key3(
+          semantics: 'Letzten Pfeil rückgängig machen',
+          // Optisch immer aktiv (wie im Layout); ohne Pfeil zum Zurücknehmen passiert nichts.
+          onTap: () {
+            if (!widget.canUndo) return;
+            Haptics.medium();
+            setState(() => _mult = 1);
+            widget.onUndo();
+          },
+          color: C.surface3,
+          borderColor: C.line,
+          child: Icon(Icons.arrow_back_ios_new_rounded, size: 30, color: C.text),
         ),
-      ));
+        flex: flex,
+      );
 
   // ---------------------------------------------------------------- Layouts
 
   Widget _full() {
     final locked = widget.spec.lockedMult;
+    // Mit gewähltem Double/Triple sind 0, 25 und 50 gesperrt. Im festen Double-
+    // bzw. Triple-Training bleibt Miss möglich, Bull nur als Double (50).
+    final free = locked == null && _mult == 1;
     return Column(
       children: [
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: Column(
+                  children: [
+                    for (var row = 0; row < 5; row++)
+                      Expanded(
+                        child: Row(children: [for (var col = 1; col <= 4; col++) _numKey(row * 4 + col)]),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    _undoKey(flex: 2),
+                    _missKey(enabled: free || locked != null),
+                    _bullKey(1, enabled: free),
+                    _bullKey(2, enabled: free || locked == 2),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         if (locked == null)
           _toggles()
         else
-          _titleBar(widget.spec.title ?? (locked == 2 ? 'Nur Doubles' : 'Nur Triples'),
-              locked == 2 ? C.dbl : C.trp),
-        const SizedBox(height: gap / 2),
-        Expanded(
-          child: Column(
-            children: [
-              for (var row = 0; row < 4; row++)
-                Expanded(
-                  child: Row(children: [for (var col = 1; col <= 5; col++) _numKey(row * 5 + col)]),
-                ),
-            ],
+          _titleBar(
+            widget.spec.title ?? (locked == 2 ? 'Nur Doubles' : 'Nur Triples'),
+            locked == 2 ? C.dbl : C.trp,
           ),
-        ),
-        SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              if (locked != 3) _numKey(25, fontSize: 21),
-              _missKey(),
-              _undoKey(),
-            ],
-          ),
-        ),
       ],
     );
   }
 
-  /// Feste Bull-Taste (25 oder 50) – unabhängig von Double/Triple.
-  Widget _fixedBull(int mult, {double fontSize = 30}) => _pad(Key3(
-        semantics: mult == 2 ? 'Bullseye 50' : '25',
-        onTap: () => _hit(25, mult),
-        color: mult == 2 ? Color.alphaBlend(C.dbl.withValues(alpha: 0.10), C.surface2) : C.surface2,
-        borderColor: mult == 2 ? C.dbl.withValues(alpha: 0.35) : C.border,
-        child: Text(mult == 2 ? 'Bull 50' : 'Bull 25',
-            style: TextStyle(fontSize: fontSize * 0.75, fontWeight: FontWeight.w800)),
-      ));
-
   Widget _numbers() {
-    // Bull erscheint als zwei feste Tasten: Bull 25 und Bull 50 (Index 50 = Bull 50).
+    // Bull erscheint als zwei feste Tasten: 25 und 50 (Index 50 = Bull 50).
     final nums = [for (final n in widget.spec.numbers) ...(n == 25 ? const [25, 50] : [n])];
     final rows = <List<int>>[];
     for (var i = 0; i < nums.length; i += 4) {
       rows.add(nums.sublist(i, (i + 4).clamp(0, nums.length)));
     }
+    final free = _mult == 1;
     return Column(
       children: [
-        _toggles(),
-        const SizedBox(height: gap / 2),
         Expanded(
-          child: Column(
+          child: Row(
             children: [
-              for (final r in rows)
-                Expanded(
-                  child: Row(children: [
-                    for (final n in r)
-                      n == 25
-                          ? _fixedBull(1)
-                          : n == 50
-                              ? _fixedBull(2)
-                              : _numKey(n, fontSize: 30),
-                    for (var k = r.length; k < 4; k++) const Expanded(child: SizedBox()),
-                  ]),
+              Expanded(
+                flex: 4,
+                child: Column(
+                  children: [
+                    for (final r in rows)
+                      Expanded(
+                        child: Row(children: [
+                          for (final n in r)
+                            n == 25
+                                ? _bullKey(1, enabled: free)
+                                : n == 50
+                                    ? _bullKey(2, enabled: free)
+                                    : _numKey(n, fontSize: 34),
+                          for (var k = r.length; k < 4; k++) const Expanded(child: SizedBox()),
+                        ]),
+                      ),
+                  ],
                 ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    _undoKey(flex: rows.length > 1 ? rows.length - 1 : 1),
+                    _missKey(enabled: free),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        SizedBox(height: 60, child: Row(children: [_missKey(flex: 2), _undoKey()])),
+        _toggles(),
       ],
     );
   }
@@ -311,8 +375,7 @@ class _KeypadState extends State<Keypad> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(b.label,
-                  style: TextStyle(
-                      fontSize: 44, fontWeight: FontWeight.w800, color: C.text, fontFeatures: tabular)),
+                  style: TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: C.text, fontFeatures: tabular)),
               if (b.sub != null)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -340,10 +403,7 @@ class _KeypadState extends State<Keypad> {
     }
     return Column(
       children: [
-        if (widget.spec.title != null) ...[
-          _titleBar(widget.spec.title!, widget.color ?? C.text),
-          const SizedBox(height: gap / 2),
-        ],
+        if (widget.spec.title != null) _titleBar(widget.spec.title!, widget.color ?? C.text),
         Expanded(
           flex: 3,
           child: Column(
@@ -354,7 +414,7 @@ class _KeypadState extends State<Keypad> {
         ),
         Expanded(
           flex: rows.length == 1 ? 2 : 1,
-          child: Row(children: [_missKey(flex: 2), _undoKey()]),
+          child: Row(children: [_missKey(label: 'Miss', flex: 2, fontSize: 24), _undoKey()]),
         ),
       ],
     );
