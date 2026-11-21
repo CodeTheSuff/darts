@@ -177,6 +177,18 @@ abstract class RelayClient {
     _sub = null;
     _ping?.cancel();
     onLost();
+    // Close-Codes des Servers: manche bedeuten „nicht neu verbinden“.
+    final text = switch (ch.closeCode) {
+      // Host durch eine neue Host-Verbindung ersetzt – sonst kämpfen zwei Geräte um den Raum.
+      4001 => 'Der Raum wird jetzt von einer anderen Verbindung geführt.',
+      4002 => 'Vom Host getrennt.',
+      1000 => 'Der Raum wurde geschlossen.',
+      _ => null,
+    };
+    if (text != null && !_stopped) {
+      fail(ch.closeCode == 4001 ? RelayStatus.failed : RelayStatus.closed, text);
+      return;
+    }
     _failFirst(relayUnreachable);
     _scheduleRetry();
   }
@@ -223,6 +235,24 @@ abstract class RelayClient {
       unawaited(ch.sink.close());
       _lost(ch);
     }
+  }
+
+  /// Verbindung jetzt trennen und gleich neu aufbauen – auch beim ersten Versuch
+  /// (z. B. Host: altes Token ungültig → frischer Raum).
+  @protected
+  void reconnectSoon(String text) {
+    _setStatus(RelayStatus.connecting, text);
+    final ch = _ch;
+    if (ch != null) {
+      _ch = null;
+      _sub?.cancel();
+      _sub = null;
+      _ping?.cancel();
+      onLost();
+      unawaited(ch.sink.close());
+    }
+    _retry?.cancel();
+    _retry = Timer(retryDelays.first, () => unawaited(_open()));
   }
 
   void _setStatus(RelayStatus s, String text) {
@@ -343,12 +373,15 @@ class RelayHost extends RelayClient {
   @override
   void onError(RelayError? code, RelayFrame f) {
     switch (code) {
-      case RelayError.token:
-        // Raum gehört inzwischen jemand anderem → neuen Raum öffnen (anderer Code).
+      case RelayError.token || RelayError.noRoom:
+        // Raum gehört inzwischen jemand anderem (oder ist weg) → neuen Raum öffnen (anderer Code).
+        if (room == null) {
+          fail(RelayStatus.failed, relayErrorText(code, host: true));
+          return;
+        }
         room = null;
         token = null;
-        setStatus(RelayStatus.connecting, relayErrorText(code, host: true));
-        onOpen();
+        reconnectSoon(relayErrorText(code, host: true));
       case RelayError.busy || RelayError.rate:
         retryLater(relayErrorText(code, host: true));
       default:
