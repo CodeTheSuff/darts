@@ -63,10 +63,25 @@ async function fromCache(request, isNav) {
   return hit;
 }
 
+// Ersatzschriften, die Flutter für fehlende Zeichen nachlädt (fonts.gstatic.com): Dateien sind
+// versioniert und ändern sich nie → Cache zuerst, damit auch der Offline-Start sie hat.
+async function fontCacheFirst(request) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const res = await fetch(request);
+  if (res && res.status === 200) cache.put(request, res.clone()).catch(() => {});
+  return res;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.origin === 'https://fonts.gstatic.com') {
+    event.respondWith(fontCacheFirst(req));
+    return;
+  }
   if (!shouldHandle(url)) return;
   const isNav = req.mode === 'navigate';
 
@@ -103,10 +118,11 @@ self.addEventListener('message', (event) => {
         for (const u of data.urls) {
           try {
             const url = new URL(u, self.registration.scope);
-            if (!shouldHandle(url)) continue;
+            const font = url.origin === 'https://fonts.gstatic.com';
+            if (!font && !shouldHandle(url)) continue;
             if (await cache.match(url.href)) continue;
-            const res = await fetch(url.href);
-            if (res.status === 200 && res.type === 'basic') await cache.put(url.href, res);
+            const res = await fetch(url.href, font ? { mode: 'cors' } : {});
+            if (res.status === 200 && (font || res.type === 'basic')) await cache.put(url.href, res);
           } catch (e) {
             // einzelne Datei fehlt – egal
           }
