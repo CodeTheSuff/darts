@@ -88,6 +88,15 @@ flutter:
           weight: 700
         - asset: assets/fonts/Barlow-ExtraBold.ttf
           weight: 800
+    # Alias: Flutter-Web lädt sonst beim Start „Roboto“ von fonts.gstatic.com (Google).
+    # Mit dieser Familie kommt sie aus den eigenen Dateien – keine Anfrage an Google.
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Barlow-Regular.ttf
+        - asset: assets/fonts/Barlow-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Barlow-Bold.ttf
+          weight: 700
     - family: BarlowCondensed
       fonts:
         - asset: assets/fonts/BarlowCondensed-SemiBold.ttf

@@ -16,6 +16,7 @@ import 'version_source.dart';
 const noCacheFiles = {
   'index.html',
   'flutter_service_worker.js',
+  'sw.js', // eigener Service Worker der Web-App (web/sw.js)
   'flutter_bootstrap.js',
   'version.json',
   'manifest.json',
