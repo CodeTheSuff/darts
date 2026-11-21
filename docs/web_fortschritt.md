@@ -14,7 +14,7 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 - [x] Version 3.0.0
 - [x] Commit Phase 1
 
-## Phase 2 – parallel (4 Agenten, Worktrees)
+## Phase 2 – parallel (4 Agenten, Worktrees) – gestartet 2026-11-21 nach Commit dd5480d
 - [ ] A Server
 - [ ] B Web-Tauglichkeit
 - [ ] C Kopplung in der App
