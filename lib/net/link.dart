@@ -1,17 +1,34 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:darts_protocol/darts_protocol.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import '../data/error_log.dart';
 import '../data/storage.dart';
 import '../data/sync.dart';
+import 'lan_stub.dart' if (dart.library.io) 'lan_io.dart';
+import 'peer_socket.dart';
+import 'relay.dart';
+import 'server_config.dart';
+
+export 'relay.dart' show RelayStatus;
 
 enum LinkRole { none, host, client }
+
+/// Über welchen Weg gekoppelt wird: direkt im WLAN oder über den Vermittlungs-Server.
+enum LinkMode { lan, online }
+
+/// Fehler beim Öffnen eines Raums (Text ist für die Anzeige gedacht).
+class LinkException implements Exception {
+  LinkException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// Ein im WLAN gefundener Raum.
 class Room {
@@ -28,7 +45,7 @@ class Room {
 
 class _Peer {
   _Peer(this.ws, this.ip);
-  final WebSocket ws;
+  final PeerSocket ws;
   final String ip;
   String device = '';
   String name = 'Gerät';
@@ -58,11 +75,14 @@ String randomHex(int bytes) {
 String authProof(String key, String role, String nonce, String device) =>
     Hmac(sha256, utf8.encode(key)).convert(utf8.encode('$role|$nonce|$device')).toString();
 
-/// Kopplung mehrerer Handys im lokalen Netz (WLAN oder Hotspot).
+/// Kopplung mehrerer Geräte – im lokalen Netz (WLAN oder Hotspot) oder online über den
+/// Vermittlungs-Server.
 ///
-/// Ein Gerät ist Host (kleiner WebSocket-Server), die anderen verbinden sich.
-/// Der Host ist die Schiedsstelle: Würfe der Gäste gehen an ihn, er schickt
-/// den neuen Stand an alle.
+/// Ein Gerät ist Host, die anderen verbinden sich. Der Host ist die Schiedsstelle:
+/// Würfe der Gäste gehen an ihn, er schickt den neuen Stand an alle.
+/// Der Transport ist austauschbar ([PeerSocket]): im WLAN ein eigener WebSocket-Server
+/// (`lan_io.dart`, nur Android), online virtuelle Kanäle durch das Relais (`relay.dart`).
+/// Das Protokoll darüber (hello/auth/welcome/state …) ist in beiden Fällen gleich.
 class Link extends ChangeNotifier {
   Link._();
   static final Link I = Link._();
@@ -94,22 +114,37 @@ class Link extends ChangeNotifier {
 
   static const defaultPort = 47123;
   static const discoveryPort = 47124;
-  static const _channel = MethodChannel('darts/net');
+
+  /// Gibt es auf dieser Plattform die WLAN-Kopplung? (Im Browser nicht.)
+  static bool get lanSupported => lanAvailable;
 
   LinkRole role = LinkRole.none;
+
+  /// Aktueller Weg (nur sinnvoll, solange [role] nicht none ist).
+  LinkMode mode = LinkMode.lan;
+  bool get isOnline => mode == LinkMode.online;
+
+  /// Raum-Code: im WLAN 4 Ziffern, online 6 Zeichen vom Server ([RoomCode]).
   String? code;
   int port = 0;
   List<String> addresses = [];
   String status = '';
 
+  /// Online: Zustand der Verbindung zum Server.
+  RelayStatus? relayStatus;
+
+  /// Server meldet „App zu alt“ (Update-Dialog anzeigen).
+  void Function(Map<String, dynamic>? info)? onUpdateRequired;
+
   // Host
-  HttpServer? _server;
+  LanServer? _server;
+  RelayHost? _relayHost;
   final List<_Peer> _peers = [];
   Timer? _announce;
-  RawDatagramSocket? _udpSend;
 
   // Gast
-  WebSocket? _ws;
+  PeerSocket? _ws;
+  RelayGuest? _relayGuest;
   String? hostAddress;
   int? hostPort;
   String? hostName;
@@ -141,6 +176,7 @@ class Link extends ChangeNotifier {
     if (role != LinkRole.client) return;
     _remember({
       'role': 'client',
+      if (isOnline) 'mode': 'online',
       'address': hostAddress,
       'port': hostPort,
       'code': code,
@@ -164,9 +200,10 @@ class Link extends ChangeNotifier {
   }
 
   /// Vom Nutzer gewollt trennen bzw. Raum schließen: nichts wiederherstellen.
+  /// Online-Host: der Raum wird auf dem Server geschlossen (Gäste bekommen „closed“).
   Future<void> leave() async {
     _forget();
-    await stop();
+    await stop(closeRoom: true);
   }
 
   void _forget() {
@@ -179,7 +216,7 @@ class Link extends ChangeNotifier {
 
   // Raumsuche
   final rooms = ValueNotifier<List<Room>>([]);
-  RawDatagramSocket? _udpListen;
+  LanListener? _udpListen;
   Timer? _prune;
 
   // ---------------------------------------------------------------- Anbindung an die App
@@ -216,7 +253,9 @@ class Link extends ChangeNotifier {
 
   bool get isHost => role == LinkRole.host;
   bool get isClient => role == LinkRole.client;
-  bool get isConnected => isHost || (isClient && _ws != null && !awaitingApproval);
+  /// Host: Raum offen (online: Server erreichbar). Gast: mit dem Host verbunden und erlaubt.
+  bool get isConnected =>
+      (isHost && (!isOnline || relayStatus == RelayStatus.online)) || (isClient && _ws != null && !awaitingApproval);
 
   /// Gast: Host muss den Beitritt noch bestätigen.
   bool awaitingApproval = false;
@@ -240,70 +279,105 @@ class Link extends ChangeNotifier {
 
   // ---------------------------------------------------------------- Host
 
+  /// WLAN: eigenen kleinen Server öffnen (nur Android).
   Future<void> startHost({int preferredPort = defaultPort}) async {
     await stop();
+    mode = LinkMode.lan;
     code = Store.roomCode;
-    try {
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, preferredPort, shared: true);
-    } catch (_) {
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
-    }
+    _server = await LanServer.bind(
+      preferredPort: preferredPort,
+      info: () => code == null ? null : _roomInfo(),
+      gate: _lanGate,
+      onPeer: (socket, query) => _addPeer(socket, byCode: query['code'] == code),
+    );
     port = _server!.port;
     role = LinkRole.host;
     status = 'Raum offen';
-    _server!.listen(_onRequest, onError: (_) {});
     addresses = await localAddresses();
     await _acquireMulticast();
-    try {
-      _udpSend = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-      _udpSend!.broadcastEnabled = true;
-    } catch (_) {}
     _announce = Timer.periodic(const Duration(seconds: 1), (_) => _sendAnnouncement());
     _sendAnnouncement();
     _remember({'role': 'host'});
     notifyListeners();
   }
 
-  Future<void> _onRequest(HttpRequest req) async {
-    final ip = req.connectionInfo?.remoteAddress.address ?? '?';
-    if (req.uri.path == '/darts/info' && code != null) {
-      req.response.headers.contentType = ContentType.json;
-      req.response.write(jsonEncode(_roomInfo()));
-      await req.response.close();
-      return;
-    }
-    if (req.uri.path != '/darts' || !WebSocketTransformer.isUpgradeRequest(req)) {
-      req.response.statusCode = HttpStatus.notFound;
-      await req.response.close();
-      return;
-    }
+  /// WLAN: Sperrliste und Code prüfen, bevor die Verbindung angenommen wird
+  /// (0 = annehmen, sonst HTTP-Status).
+  Future<int> _lanGate(String ip, Map<String, String> query) async {
     final now = DateTime.now();
     final fails = (_fails[ip] ?? [])..removeWhere((t) => now.difference(t) > failWindow);
     if (fails.length >= maxFails) {
       ErrorLog.crumb('Kopplung: $ip gesperrt (zu viele falsche Codes)');
-      req.response.statusCode = HttpStatus.tooManyRequests;
-      await req.response.close();
-      return;
+      return 429;
     }
-    final byKey = req.uri.queryParameters['auth'] == '1';
-    final byCode = req.uri.queryParameters['code'] == code;
+    final byKey = query['auth'] == '1';
+    final byCode = query['code'] == code;
     if (!byKey && !byCode) {
       _fails[ip] = fails..add(now);
-      req.response.statusCode = HttpStatus.forbidden;
-      await req.response.close();
-      return;
+      return 403;
     }
-    if (_peers.length >= maxPeers) {
-      req.response.statusCode = HttpStatus.serviceUnavailable;
-      await req.response.close();
-      return;
-    }
+    if (_peers.length >= maxPeers) return 503;
     _fails.remove(ip);
-    final ws = await WebSocketTransformer.upgrade(req);
-    ws.pingInterval = const Duration(seconds: 4);
-    final peer = _Peer(ws, ip)..byCode = byCode;
+    return 0;
+  }
+
+  /// Online: Raum auf dem Vermittlungs-Server öffnen bzw. den eigenen zurückholen.
+  ///
+  /// Der Raum-Code kommt vom Server (6 Zeichen) und wird mit dem Token gemerkt, damit
+  /// er nach Abbruch/Neustart gleich bleibt. Wirft [LinkException], wenn der Server
+  /// nicht erreichbar ist oder ablehnt.
+  Future<void> startOnlineHost({String? serverUrl}) async {
+    await stop();
+    mode = LinkMode.online;
+    final r = RelayHost(ServerConfig.relayUri(serverUrl), room: Store.onlineRoom, token: Store.onlineToken);
+    _relayHost = r;
+    r.onHosted = (room, token, resumed) {
+      if (_relayHost != r) return;
+      Store.onlineRoom = room;
+      Store.onlineToken = token;
+      code = room;
+      ErrorLog.crumb('Online-Raum ${resumed ? 'zurückgeholt' : 'geöffnet'}');
+      notifyListeners();
+      // Nach dem Zurückholen bekommen wieder verbundene Gäste ihren Stand über „hello“.
+    };
+    r.onPeer = (socket) {
+      if (_relayHost == r) _addPeer(socket, byCode: true);
+    };
+    r.onStatus = (st, text) {
+      if (_relayHost != r) return;
+      relayStatus = st;
+      status = text;
+      notifyListeners();
+    };
+    r.onUpdateRequired = (info) => onUpdateRequired?.call(info);
+    role = LinkRole.host;
+    relayStatus = RelayStatus.connecting;
+    status = 'Verbinde mit Server …';
+    notifyListeners();
+    r.start();
+    final err = await r.first;
+    if (_relayHost != r) throw LinkException('Abgebrochen');
+    if (err != null) {
+      await stop();
+      status = err;
+      notifyListeners();
+      throw LinkException(err);
+    }
+    _remember({'role': 'host', 'mode': 'online'});
+  }
+
+  /// Neue Verbindung eines Gasts (WLAN oder online).
+  ///
+  /// [byCode]: mit richtigem Raum-Code gekommen. Online prüft den Code der Server beim
+  /// Beitritt – neue Geräte brauchen trotzdem die Freigabe am Host.
+  void _addPeer(PeerSocket socket, {required bool byCode}) {
+    if (_peers.length >= maxPeers) {
+      socket.close();
+      return;
+    }
+    final peer = _Peer(socket, socket.remote)..byCode = byCode;
     _peers.add(peer);
-    ws.listen(
+    socket.messages.listen(
       (data) => _hostReceive(peer, data),
       onDone: () => _dropPeer(peer),
       onError: (_) => _dropPeer(peer),
@@ -482,7 +556,7 @@ class Link extends ChangeNotifier {
       };
 
   void _sendAnnouncement() {
-    final s = _udpSend;
+    final s = _server;
     if (s == null || code == null) return;
     final payload = utf8.encode(jsonEncode(_roomInfo()));
     final targets = <String>{'255.255.255.255'};
@@ -490,11 +564,7 @@ class Link extends ChangeNotifier {
       final parts = a.split('.');
       if (parts.length == 4) targets.add('${parts[0]}.${parts[1]}.${parts[2]}.255');
     }
-    for (final t in targets) {
-      try {
-        s.send(payload, InternetAddress(t), discoveryPort);
-      } catch (_) {}
-    }
+    s.announce(payload, targets, discoveryPort);
   }
 
   /// Test: alle Gäste hart trennen, Server läuft weiter.
@@ -524,21 +594,10 @@ class Link extends ChangeNotifier {
   Future<bool> join(String address, int port, String roomCode,
       {String? name, bool viewer = false, String? hostDevice}) async {
     await stop();
-    _expectHost = hostDevice;
-    _byKey = hostDevice != null &&
-        (Store.knownHosts.where((h) => h.device == hostDevice).firstOrNull?.key?.isNotEmpty ?? false);
-    _remembered = null;
-    _lastTourIn = null;
-    awaitingApproval = false;
-    denied = false;
-    joinedAsViewer = viewer;
-    role = LinkRole.client;
+    mode = LinkMode.lan;
+    _prepareClient(roomCode, name: name, viewer: viewer, hostDevice: hostDevice);
     hostAddress = address;
     hostPort = port;
-    code = roomCode;
-    hostName = name;
-    _wantConnected = true;
-    status = 'Verbinde …';
     notifyListeners();
     final ok = await _connect();
     if (!ok) {
@@ -552,39 +611,132 @@ class Link extends ChangeNotifier {
     return ok;
   }
 
+  void _prepareClient(String roomCode, {String? name, bool viewer = false, String? hostDevice}) {
+    _expectHost = hostDevice;
+    _byKey = hostDevice != null &&
+        (Store.knownHosts.where((h) => h.device == hostDevice).firstOrNull?.key?.isNotEmpty ?? false);
+    _remembered = null;
+    _lastTourIn = null;
+    awaitingApproval = false;
+    denied = false;
+    joinedAsViewer = viewer;
+    role = LinkRole.client;
+    hostAddress = null;
+    hostPort = null;
+    code = roomCode;
+    hostName = name;
+    _wantConnected = true;
+    status = 'Verbinde …';
+  }
+
+  /// Online: einem Raum auf dem Vermittlungs-Server beitreten (Code mit 6 Zeichen).
+  ///
+  /// Liefert false, wenn der Server nicht erreichbar ist oder den Code nicht kennt
+  /// ([status] enthält dann die Meldung). Ist der Host gerade offline, ist der Beitritt
+  /// trotzdem erfolgreich – die Verbindung entsteht, sobald er wieder da ist.
+  /// Hat das Gerät für [hostDevice] einen Schlüssel, meldet es sich damit an
+  /// (keine erneute Freigabe nötig).
+  Future<bool> joinOnline(String roomCode,
+      {String? name, bool viewer = false, String? hostDevice, String? serverUrl}) async {
+    await stop();
+    final room = RoomCode.normalize(roomCode);
+    if (!RoomCode.isValid(room)) {
+      status = 'Der Raum-Code hat ${RoomCode.length} Zeichen (Buchstaben und Ziffern).';
+      notifyListeners();
+      return false;
+    }
+    mode = LinkMode.online;
+    _prepareClient(room, name: name, viewer: viewer, hostDevice: hostDevice);
+    final g = RelayGuest(ServerConfig.relayUri(serverUrl), room: room);
+    _relayGuest = g;
+    g.onHostSocket = (socket) {
+      if (_relayGuest == g) _attach(socket);
+    };
+    g.onStatus = (st, text) {
+      if (_relayGuest != g) return;
+      relayStatus = st;
+      if (st == RelayStatus.closed || st == RelayStatus.failed) {
+        _wantConnected = false;
+        _forget();
+        status = text;
+      } else if (st != RelayStatus.online || _ws == null) {
+        status = text;
+      }
+      notifyListeners();
+    };
+    g.onUpdateRequired = (info) => onUpdateRequired?.call(info);
+    relayStatus = RelayStatus.connecting;
+    notifyListeners();
+    g.start();
+    final err = await g.first;
+    if (_relayGuest != g) return false;
+    if (err != null) {
+      _relayGuest = null;
+      await g.close();
+      _wantConnected = false;
+      role = LinkRole.none;
+      relayStatus = null;
+      status = err;
+      notifyListeners();
+      return false;
+    }
+    _clientSession();
+    return true;
+  }
+
   Future<bool> _connect() async {
     try {
       final q = _byKey ? 'auth=1' : 'code=${Uri.encodeQueryComponent(code ?? '')}';
-      final ws = await WebSocket.connect('ws://$hostAddress:$hostPort/darts?$q').timeout(const Duration(seconds: 5));
-      ws.pingInterval = const Duration(seconds: 4);
-      _ws = ws;
-      status = 'Verbunden';
-      _nonce = randomHex(16);
-      _send(ws, {
-        't': 'hello',
-        'device': deviceForTest ?? Store.deviceId,
-        'name': Store.deviceName,
-        'viewer': joinedAsViewer,
-        if (_byKey) 'auth': true,
-        if (_byKey) 'nonce': _nonce,
-      });
-      if (_byKey) awaitingApproval = true;
-      ws.listen(
-        _clientReceive,
-        onDone: _lostHost,
-        onError: (_) => _lostHost(),
-        cancelOnError: true,
-      );
-      notifyListeners();
+      final ws = await lanConnect(hostAddress ?? '', hostPort ?? defaultPort, q, const Duration(seconds: 5));
+      _attach(ws);
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  void _lostHost() {
+  /// Neue Verbindung zum Host: anmelden (mit Schlüssel oder Code) und lauschen.
+  void _attach(PeerSocket ws) {
+    _ws = ws;
+    status = 'Verbunden';
+    _nonce = randomHex(16);
+    _send(ws, {
+      't': 'hello',
+      'device': deviceForTest ?? Store.deviceId,
+      'name': Store.deviceName,
+      'viewer': joinedAsViewer,
+      if (_byKey) 'auth': true,
+      if (_byKey) 'nonce': _nonce,
+    });
+    if (_byKey) awaitingApproval = true;
+    ws.messages.listen(
+      _clientReceive,
+      onDone: () => _lostHost(ws),
+      onError: (_) => _lostHost(ws),
+      cancelOnError: true,
+    );
+    notifyListeners();
+  }
+
+  /// Gast gibt auf (abgelehnt / Host nicht ausgewiesen): online auch den Raum verlassen.
+  void _giveUp() {
+    final g = _relayGuest;
+    _relayGuest = null;
+    if (g != null) unawaited(g.close());
+  }
+
+  void _lostHost(PeerSocket ws) {
+    // Eine ältere Sitzung (online nach „Host wieder da“) darf die neue nicht abräumen.
+    if (!identical(_ws, ws)) return;
     _ws = null;
     if (!_wantConnected) return;
+    if (isOnline) {
+      // Online baut das Relais die Verbindung selbst wieder auf.
+      final g = _relayGuest;
+      status = g == null || g.status == RelayStatus.online ? 'Verbindung verloren – verbinde neu …' : g.statusText;
+      notifyListeners();
+      return;
+    }
     status = 'Verbindung verloren – verbinde neu …';
     notifyListeners();
     _retry?.cancel();
@@ -619,6 +771,7 @@ class Link extends ChangeNotifier {
           status = 'Das Gerät konnte sich nicht ausweisen – Verbindung abgebrochen';
           ErrorLog.crumb('Kopplung: Host-Nachweis falsch, getrennt');
           _ws?.close();
+          _giveUp();
           notifyListeners();
           return;
         }
@@ -628,15 +781,7 @@ class Link extends ChangeNotifier {
         final key = msg['key'] as String?;
         if (hd.isNotEmpty && key != null && key.length >= 32) {
           _expectHost = hd;
-          Store.rememberHost(KnownHost(
-            device: hd,
-            name: hostName ?? 'Gerät',
-            address: hostAddress ?? '',
-            port: hostPort ?? defaultPort,
-            code: code ?? '',
-            viewer: joinedAsViewer,
-            key: key,
-          ));
+          Store.rememberHost(_hostEntry(hd, key: key));
           // Wiederverbinden ab jetzt mit Schlüssel
           _byKey = true;
           _remembered = hd;
@@ -658,6 +803,7 @@ class Link extends ChangeNotifier {
         } else {
           status = 'Das andere Gerät hat die Verbindung abgelehnt';
         }
+        _giveUp();
         notifyListeners();
       case 'state':
         if (awaitingApproval) {
@@ -676,14 +822,7 @@ class Link extends ChangeNotifier {
         // Nur ein ausgewiesener Host (Schlüssel) bzw. ein per Code erlaubter wird gemerkt.
         if (hd != null && hd != _remembered && (!_byKey || hd == _expectHost)) {
           _remembered = hd;
-          Store.rememberHost(KnownHost(
-            device: hd,
-            name: hostName ?? 'Gerät',
-            address: hostAddress ?? '',
-            port: hostPort ?? defaultPort,
-            code: code ?? '',
-            viewer: joinedAsViewer,
-          ));
+          Store.rememberHost(_hostEntry(hd));
         }
         notifyListeners();
         onState?.call(msg);
@@ -696,6 +835,22 @@ class Link extends ChangeNotifier {
     }
   }
 
+  /// Eintrag für „Bekannte Geräte“: WLAN-Angaben und Online-Raum bleiben jeweils erhalten,
+  /// wenn das Gerät auf dem anderen Weg schon bekannt war.
+  KnownHost _hostEntry(String hd, {String? key}) {
+    final old = Store.knownHosts.where((h) => h.device == hd).firstOrNull;
+    return KnownHost(
+      device: hd,
+      name: hostName ?? 'Gerät',
+      address: isOnline ? (old?.address ?? '') : (hostAddress ?? ''),
+      port: isOnline ? (old?.port ?? defaultPort) : (hostPort ?? defaultPort),
+      code: isOnline ? (old?.code ?? '') : (code ?? ''),
+      viewer: joinedAsViewer,
+      key: key,
+      room: isOnline ? code : old?.room,
+    );
+  }
+
   /// Gast: zwischen Mitspielen und reiner Anzeige wechseln.
   void setViewerMode(bool viewer) {
     joinedAsViewer = viewer;
@@ -703,8 +858,7 @@ class Link extends ChangeNotifier {
     final hd = _remembered ?? _expectHost;
     final h = Store.knownHosts.where((x) => x.device == hd).firstOrNull;
     if (h != null) {
-      Store.rememberHost(KnownHost(
-          device: h.device, name: h.name, address: h.address, port: h.port, code: h.code, viewer: viewer, key: h.key));
+      Store.rememberHost(h.copyWith(viewer: viewer));
     }
     notifyListeners();
   }
@@ -741,23 +895,16 @@ class Link extends ChangeNotifier {
   // ---------------------------------------------------------------- Raumsuche
 
   Future<void> startDiscovery({@visibleForTesting bool includeSelf = false}) async {
-    if (_udpListen != null) return;
+    if (_udpListen != null || !lanAvailable) return;
     await _acquireMulticast();
-    try {
-      _udpListen = await RawDatagramSocket.bind(InternetAddress.anyIPv4, discoveryPort, reuseAddress: true);
-      _udpListen!.broadcastEnabled = true;
-      _udpListen!.listen((ev) {
-        if (ev != RawSocketEvent.read) return;
-        final dg = _udpListen?.receive();
-        if (dg == null) return;
-        try {
-          final j = jsonDecode(utf8.decode(dg.data));
-          if (j is! Map || j['app'] != 'darts_counter') return;
-          if (!includeSelf && j['device'] == Store.deviceId) return;
-          _addRoom(dg.address.address, Map<String, dynamic>.from(j), includeSelf: includeSelf);
-        } catch (_) {}
-      });
-    } catch (_) {}
+    _udpListen = await LanListener.bind(discoveryPort, (address, payload) {
+      try {
+        final j = jsonDecode(payload);
+        if (j is! Map || j['app'] != 'darts_counter') return;
+        if (!includeSelf && j['device'] == Store.deviceId) return;
+        _addRoom(address, Map<String, dynamic>.from(j), includeSelf: includeSelf);
+      } catch (_) {}
+    });
     _prune = Timer.periodic(const Duration(seconds: 2), (_) {
       final now = DateTime.now();
       final list = rooms.value.where((r) => now.difference(r.seen).inSeconds < 9).toList();
@@ -789,7 +936,7 @@ class Link extends ChangeNotifier {
   Future<void> _quickProbe() async {
     if (_quick || _scanTimer == null) return;
     _quick = true;
-    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1500);
+    final client = LanProber(const Duration(milliseconds: 1500));
     try {
       final targets = <(String, int)>{
         for (final h in Store.knownHosts)
@@ -798,7 +945,7 @@ class Link extends ChangeNotifier {
       };
       await Future.wait([for (final (a, p) in targets) _probe(client, a, _includeSelf, port: p, patient: true)]);
     } finally {
-      client.close(force: true);
+      client.close();
       _quick = false;
     }
   }
@@ -861,26 +1008,7 @@ class Link extends ChangeNotifier {
 
   /// Eigene Adressen mit Netzgröße (Präfix). Auf Android vom System, sonst /24.
   static Future<List<(String, int)>> networks() async {
-    final out = <(String, int)>[];
-    try {
-      final r = await _channel.invokeMethod<List<Object?>>('networks');
-      for (final e in r ?? const []) {
-        final parts = '$e'.split('/');
-        if (parts.length == 2 && !parts[0].contains(':')) out.add((parts[0], int.parse(parts[1])));
-      }
-    } catch (_) {}
-    if (out.isEmpty) {
-      try {
-        final list = await NetworkInterface.list(type: InternetAddressType.IPv4);
-        for (final i in list) {
-          final n = i.name.toLowerCase();
-          if (n.startsWith('rmnet') || n.startsWith('ccmni') || n.contains('dummy') || n.startsWith('tun')) continue;
-          for (final a in i.addresses) {
-            if (!a.isLoopback && !a.isLinkLocal) out.add((a.address, 24));
-          }
-        }
-      } catch (_) {}
-    }
+    final out = await lanNetworks();
     return [for (final n in out) if (_private(n.$1)) n];
   }
 
@@ -918,7 +1046,7 @@ class Link extends ChangeNotifier {
   Future<void> _scanNetwork({bool includeSelf = false}) async {
     if (_scanning || _scanTimer == null) return;
     _scanning = true;
-    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1200);
+    final client = LanProber(const Duration(milliseconds: 1200));
     final pending = <Future<void>>[];
     try {
       final known = {for (final h in Store.knownHosts) h.address};
@@ -940,7 +1068,7 @@ class Link extends ChangeNotifier {
       }
       await Future.wait(List.of(pending));
     } finally {
-      client.close(force: true);
+      client.close();
       _scanning = false;
       // Nach einem kompletten Durchlauf erst nach einer Pause wieder (Akku, Router).
       if (_scanTimer != null) {
@@ -950,21 +1078,10 @@ class Link extends ChangeNotifier {
     }
   }
 
-  Future<void> _probe(HttpClient client, String address, bool includeSelf,
+  Future<void> _probe(LanProber client, String address, bool includeSelf,
       {int port = defaultPort, bool patient = false}) async {
-    try {
-      final req = await client
-          .get(address, port, '/darts/info')
-          .timeout(Duration(milliseconds: patient ? 1800 : 1100));
-      final res = await req.close().timeout(const Duration(seconds: 2));
-      if (res.statusCode != 200) {
-        await res.drain<void>();
-        return;
-      }
-      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 2));
-      final j = jsonDecode(body);
-      if (j is Map) _addRoom(address, Map<String, dynamic>.from(j), includeSelf: includeSelf);
-    } catch (_) {}
+    final j = await client.info(address, port, patient: patient);
+    if (j != null) _addRoom(address, j, includeSelf: includeSelf);
   }
 
   void stopDiscovery() {
@@ -981,7 +1098,11 @@ class Link extends ChangeNotifier {
 
   // ---------------------------------------------------------------- Allgemein
 
-  Future<void> stop() async {
+  /// Kopplung beenden. Die gemerkte Sitzung bleibt (Neustart stellt sie wieder her).
+  ///
+  /// [closeRoom]: Online-Host schließt den Raum auf dem Server (Close-Code 4000) –
+  /// sonst gilt das Beenden dort nur als „Host offline“ und die Gäste warten.
+  Future<void> stop({bool closeRoom = false}) async {
     _wantConnected = false;
     // Gemerkte Kopplung bleibt bestehen (Absturz/Beenden) – nur [leave] löscht sie.
     _session = null;
@@ -990,62 +1111,49 @@ class Link extends ChangeNotifier {
     _retry?.cancel();
     _announce?.cancel();
     _announce = null;
-    _udpSend?.close();
-    _udpSend = null;
+    // Relais zuerst schließen: Die virtuellen Kanäle enden dann ohne „kick“,
+    // die Gäste bleiben im Raum und warten auf den Host.
+    final rh = _relayHost;
+    _relayHost = null;
+    if (rh != null) await (closeRoom ? rh.closeRoom() : rh.close());
+    final rg = _relayGuest;
+    _relayGuest = null;
+    if (rg != null) await rg.close();
     for (final p in List.of(_peers)) {
       await p.ws.close();
     }
     _peers.clear();
-    await _server?.close(force: true);
+    await _server?.close();
     _server = null;
     await _ws?.close();
     _ws = null;
     role = LinkRole.none;
     status = '';
+    relayStatus = null;
     remoteDevices = 0;
     if (_udpListen == null) await _releaseMulticast();
     notifyListeners();
   }
 
-  static Future<List<String>> localAddresses() async {
-    try {
-      final list = await NetworkInterface.list(type: InternetAddressType.IPv4);
-      return [
-        for (final i in list)
-          for (final a in i.addresses)
-            if (!a.isLoopback) a.address,
-      ];
-    } catch (_) {
-      return [];
-    }
-  }
+  static Future<List<String>> localAddresses() => lanLocalAddresses();
 
-  Future<void> _acquireMulticast() async {
-    try {
-      await _channel.invokeMethod('acquire');
-    } catch (_) {}
-  }
+  Future<void> _acquireMulticast() => lanMulticast(true);
 
-  Future<void> _releaseMulticast() async {
-    try {
-      await _channel.invokeMethod('release');
-    } catch (_) {}
-  }
+  Future<void> _releaseMulticast() => lanMulticast(false);
 
   static Map<String, dynamic>? _decode(Object? data) {
-    if (data is String && data.length > maxMessage) return null;
-    if (data is List<int> && data.length > maxMessage) return null;
+    if (data is! String || data.length > maxMessage) return null;
     try {
-      final j = jsonDecode(data is String ? data : utf8.decode(data as List<int>));
+      final j = jsonDecode(data);
       return j is Map ? Map<String, dynamic>.from(j) : null;
     } catch (_) {
       return null;
     }
   }
 
-  static void _send(WebSocket ws, Map<String, dynamic> msg) {
+  static void _send(PeerSocket ws, Map<String, dynamic> msg) {
     try {
-      ws.add(jsonEncode(msg));
+      ws.send(jsonEncode(msg));
     } catch (_) {}
   }
 }

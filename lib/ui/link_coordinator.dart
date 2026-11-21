@@ -15,6 +15,7 @@ import 'game_screen.dart';
 import 'scoreboard_screen.dart';
 import 'share_screens.dart';
 import 'tournament_screens.dart';
+import 'update_dialog.dart';
 
 /// Globaler Navigator – damit gekoppelte Spiele automatisch geöffnet werden können.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -61,13 +62,21 @@ class LinkCoordinator {
 
   /// Nach Absturz/Neustart: Raum wieder öffnen bzw. neu verbinden (nur, wenn die
   /// Kopplung höchstens [Link.sessionMaxAge] her ist). Der Host öffnet das laufende Match.
+  ///
+  /// Wird beim App-Start aufgerufen – dort hängt auch die tägliche Update-Prüfung.
+  /// Online: Der Host holt seinen Raum (Code + Token) zurück, der Gast tritt demselben
+  /// Raum wieder bei und meldet sich mit seinem Schlüssel an (keine neue Freigabe).
   static Future<void> restoreSession() async {
+    unawaited(UpdateUi.checkOnStart());
     final s = Link.recentSession();
     if (s == null || Link.I.role != LinkRole.none) return;
-    ErrorLog.crumb('Kopplung wird wiederhergestellt (${s['role']})');
+    final online = s['mode'] == 'online';
+    // Im Browser gibt es keine WLAN-Kopplung.
+    if (!online && !Link.lanSupported) return;
+    ErrorLog.crumb('Kopplung wird wiederhergestellt (${s['role']}${online ? ', online' : ''})');
     if (s['role'] == 'host') {
       try {
-        await Link.I.startHost();
+        await (online ? Link.I.startOnlineHost() : Link.I.startHost());
       } catch (_) {
         return;
       }
@@ -84,6 +93,13 @@ class LinkCoordinator {
     final device = s['device'] as String?;
     final asViewer = s['viewer'] == true;
     final name = s['name'] as String?;
+    if (online) {
+      viewer = asViewer;
+      final ok = await Link.I.joinOnline(code, name: name, viewer: asViewer, hostDevice: device);
+      if (ok && asViewer) startViewer();
+      if (!ok) viewer = false;
+      return;
+    }
     final port = (s['port'] as num?)?.toInt() ?? Link.defaultPort;
 
     Future<bool> tryJoin(String addr, int p) async {
@@ -122,6 +138,7 @@ class LinkCoordinator {
     l.onSync = _onSync;
     l.onJoinRequest = _askJoin;
     l.onDirect = _onDirect;
+    l.onUpdateRequired = (info) => unawaited(UpdateUi.showRequired(info));
     MatchController.onMatchCommitted = (_) => _scheduleSync();
     TournamentStore.changes.addListener(_scheduleSync);
     var wasConnected = false;
