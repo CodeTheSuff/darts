@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -15,6 +16,7 @@ import '../games/x01.dart';
 import '../games/tournament.dart';
 import '../models/dart.dart';
 import '../net/link.dart';
+import '../platform/fullscreen_button.dart';
 import 'board_grid.dart';
 import 'display_waiting.dart';
 import 'celebration.dart';
@@ -73,7 +75,8 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // Im Browser gibt es keinen System-UI-Modus (Vollbild dort per Taste oben rechts).
+    if (!kIsWeb) SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WakelockPlus.enable().catchError((_) {});
     LinkCoordinator.viewerState.addListener(_onState);
     Callouts.isDisplay = true;
@@ -88,7 +91,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
       b.sub?.cancel();
     }
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (!kIsWeb) SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WakelockPlus.disable().catchError((_) {});
     super.dispose();
   }
@@ -326,6 +329,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
                         icon: Icon(Icons.sports_esports_rounded, color: C.muted, size: 18),
                         label: Text('Mitspielen', style: TextStyle(color: C.muted)),
                       ),
+                    FullscreenButton(color: C.muted),
                     IconButton(
                       tooltip: 'Anzeige beenden',
                       icon: Icon(Icons.close_rounded, color: C.muted),

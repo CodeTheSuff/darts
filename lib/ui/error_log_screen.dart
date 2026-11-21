@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../data/error_log.dart';
+import '../platform/platform_env.dart';
 import 'theme.dart';
 
 /// Fehlerprotokoll ansehen, teilen und leeren.
@@ -11,14 +12,14 @@ class ErrorLogScreen extends StatelessWidget {
   const ErrorLogScreen({super.key});
 
   Future<void> _share(BuildContext context) async {
-    final now = DateTime.now();
-    final name = 'darts-fehlerprotokoll-${now.year}-${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}.txt';
     try {
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile.fromData(utf8.encode(ErrorLog.exportText()), mimeType: 'text/plain', name: name)],
+      // Android: Teilen-Dialog. Browser: Download (iPhone/iPad: Teilen-Dialog).
+      await Plat.I.saveFile(
+        Uint8List.fromList(utf8.encode(ErrorLog.exportText())),
+        name: ErrorLog.exportFileName(),
+        mime: 'text/plain',
         subject: 'Darts – Fehlerprotokoll',
-      ));
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Teilen nicht möglich: $e')));

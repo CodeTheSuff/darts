@@ -4,6 +4,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../platform/platform_env.dart';
+import '../platform/web_audio.dart';
 import 'error_log.dart';
 import 'storage.dart';
 
@@ -43,6 +45,26 @@ class _PlayerVoice implements SoundVoice {
   }
 }
 
+/// Browser: Wiedergabe über die gemeinsame Web-Audio-Ausgabe (iOS-tauglich, siehe [WebAudio]).
+class _WebVoice implements SoundVoice {
+  String? _asset;
+
+  @override
+  Future<void> load(String asset) async {
+    _asset = 'assets/$asset';
+    await WebAudio.load(_asset!);
+  }
+
+  @override
+  Future<void> play(double volume) async {
+    final a = _asset;
+    if (a != null) await WebAudio.play(a, volume);
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 /// Kurze Soundeffekte (abschaltbar und mit Lautstärke in den Einstellungen).
 ///
 /// Früher wurde für jeden Ton ein neuer Player angelegt und bei Fehlern nie freigegeben.
@@ -59,7 +81,7 @@ class Sound {
 
   /// Erzeugt einen Player (in Tests austauschbar).
   @visibleForTesting
-  static SoundVoice Function() createVoice = _PlayerVoice.new;
+  static SoundVoice Function() createVoice = WebAudio.supported ? _WebVoice.new : _PlayerVoice.new;
 
   static final Map<String, List<SoundVoice>> _pool = {};
   static final Map<String, int> _next = {};
@@ -123,22 +145,25 @@ class Sound {
   }
 }
 
-/// Vibration (abschaltbar in den Einstellungen).
+/// Vibration (abschaltbar in den Einstellungen). Im Browser ohne Vibration (iPhone) still ignoriert.
 class Haptics {
   Haptics._();
+
+  static bool get _on => Store.vibration && Plat.I.canVibrate;
+
   static void selection() {
-    if (Store.vibration) HapticFeedback.selectionClick();
+    if (_on) HapticFeedback.selectionClick();
   }
 
   static void light() {
-    if (Store.vibration) HapticFeedback.lightImpact();
+    if (_on) HapticFeedback.lightImpact();
   }
 
   static void medium() {
-    if (Store.vibration) HapticFeedback.mediumImpact();
+    if (_on) HapticFeedback.mediumImpact();
   }
 
   static void heavy() {
-    if (Store.vibration) HapticFeedback.heavyImpact();
+    if (_on) HapticFeedback.heavyImpact();
   }
 }

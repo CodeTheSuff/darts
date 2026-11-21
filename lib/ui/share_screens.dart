@@ -1,12 +1,13 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../data/storage.dart';
 import '../data/sync.dart';
 import '../games/engine.dart';
 import '../net/link.dart';
+import '../platform/platform_env.dart';
 import 'theme.dart';
 
 /// Spieler auswählen und als Datei oder an gekoppelte Geräte senden.
@@ -31,11 +32,9 @@ class _ShareScreenState extends State<ShareScreen> {
     String two(int v) => v.toString().padLeft(2, '0');
     final name = 'darts_spieler_${now.year}-${two(now.month)}-${two(now.day)}.json';
     try {
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile.fromData(utf8.encode(pkg.encode()), mimeType: 'application/json', name: name)],
-        fileNameOverrides: [name],
-        subject: 'Darts – Spielerdaten',
-      ));
+      // Android: Teilen-Dialog. Browser: Download (iPhone/iPad: Teilen-Dialog).
+      await Plat.I.saveFile(Uint8List.fromList(utf8.encode(pkg.encode())),
+          name: name, mime: 'application/json', subject: 'Darts – Spielerdaten');
     } catch (e) {
       _snack('Teilen fehlgeschlagen: $e');
     }

@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'error_log_web.dart' if (dart.library.io) 'error_log_io.dart' as backend;
 
 /// Ein Eintrag im Fehlerprotokoll.
 class LogItem {
@@ -78,11 +76,35 @@ class LogItem {
   }
 }
 
+/// Wo das Protokoll liegt: Android in Dateien (mit Hänger-Wächter im eigenen Isolate),
+/// im Browser in localStorage (begrenzt, ohne Wächter). Siehe `error_log_io.dart` / `error_log_web.dart`.
+abstract class LogBackend {
+  /// Vorbereiten. Liefert `false`, wenn nichts gespeichert werden kann.
+  Future<bool> open();
+
+  /// Gespeicherte Einträge (je Zeile ein JSON-Objekt).
+  List<String> readLines();
+
+  /// Alle Einträge ersetzen (älteste zuerst).
+  void writeLines(List<String> lines);
+
+  /// Daten eines Hängers, bei dem die App beendet wurde (wird beim Lesen gelöscht).
+  String? takeKilledHang();
+
+  /// Startet den Hänger-Wächter. Liefert die Funktion, mit der die Oberfläche ihm
+  /// Nachrichten schickt (`['beat']`, `['crumb', text]`, `['pause']`, `['resume']`, `['stop']`),
+  /// oder `null`, wenn es keinen Wächter gibt (Browser).
+  /// [onHang] bekommt `[seit, dauerMs, crumbs]`, sobald die Oberfläche wieder reagiert.
+  Future<void Function(List<Object?>)?> startWatchdog(
+      int limitMs, int maxCrumbs, void Function(List<Object?>) onHang);
+}
+
 /// Fehlerprotokoll: speichert Fehler, Ruckler und Hänger auf dem Gerät.
 ///
 /// Hänger erkennt ein eigener Hintergrund-Isolate: Die Oberfläche meldet sich
 /// alle 500 ms. Bleibt die Meldung länger als [hangAfter] aus, schreibt der
 /// Wächter einen Eintrag – auch wenn die App danach gar nicht mehr reagiert.
+/// Im Browser gibt es keinen Wächter; Fehler und Ruckler werden trotzdem erfasst.
 class ErrorLog {
   ErrorLog._();
 
@@ -101,23 +123,32 @@ class ErrorLog {
   /// Wird gesetzt, wenn die App beim letzten Mal eingefroren war und beendet wurde.
   static LogItem? pendingNotice;
 
-  static File? _file;
-  static File? _hangFile;
-  static SendPort? _dog;
-  static Timer? _beat;
+  static LogBackend _store = backend.createLogBackend();
+  static bool _stored = false;
+  static void Function(List<Object?>)? _dog;
   static bool _ready = false;
+
+  /// Speicherort ersetzen (Tests).
+  @visibleForTesting
+  static set backendForTest(LogBackend b) {
+    _store = b;
+    _stored = false;
+    _ready = false;
+  }
 
   static Future<void> init({required String appVersion}) async {
     if (_ready) return;
     _ready = true;
     version = appVersion;
     try {
-      final dir = await getApplicationSupportDirectory();
-      _file = File('${dir.path}/errors.jsonl');
-      _hangFile = File('${dir.path}/hang.json');
-      _load();
-      _checkKilledHang();
-    } catch (_) {}
+      _stored = await _store.open();
+      if (_stored) {
+        _load();
+        _checkKilledHang();
+      }
+    } catch (_) {
+      _stored = false;
+    }
 
     final prevFlutter = FlutterError.onError;
     FlutterError.onError = (details) {
@@ -141,7 +172,7 @@ class ErrorLog {
     final line = '${_two(d.hour)}:${_two(d.minute)}:${_two(d.second)}.${(d.millisecond ~/ 100)} $text';
     _crumbs.add(line);
     if (_crumbs.length > maxCrumbs) _crumbs.removeAt(0);
-    _dog?.send(['crumb', line]);
+    _dog?.call(['crumb', line]);
   }
 
   static String _two(int v) => v.toString().padLeft(2, '0');
@@ -193,11 +224,16 @@ class ErrorLog {
     return b.toString();
   }
 
+  /// Dateiname für den Export (`darts-fehlerprotokoll-JJJJ-MM-TT.txt`).
+  static String exportFileName([DateTime? now]) {
+    final d = now ?? DateTime.now();
+    return 'darts-fehlerprotokoll-${d.year}-${_two(d.month)}-${_two(d.day)}.txt';
+  }
+
   static void _load() {
-    final f = _file;
-    if (f == null || !f.existsSync()) return;
     final out = <LogItem>[];
-    for (final line in f.readAsLinesSync()) {
+    for (final line in _store.readLines()) {
+      if (line.trim().isEmpty) continue;
       try {
         out.add(LogItem.fromJson(Map<String, dynamic>.from(jsonDecode(line) as Map)));
       } catch (_) {}
@@ -207,10 +243,9 @@ class ErrorLog {
   }
 
   static void _save() {
-    final f = _file;
-    if (f == null) return;
+    if (!_stored) return;
     try {
-      f.writeAsStringSync(entries.value.reversed.map((e) => jsonEncode(e.toJson())).join('\n'));
+      _store.writeLines([for (final e in entries.value.reversed) jsonEncode(e.toJson())]);
     } catch (_) {}
   }
 
@@ -230,99 +265,41 @@ class ErrorLog {
 
   /// App war eingefroren und wurde beendet, bevor sie wieder reagierte.
   static void _checkKilledHang() {
-    final f = _hangFile;
-    if (f == null || !f.existsSync()) return;
+    final raw = _store.takeKilledHang();
+    if (raw == null) return;
     try {
-      final j = Map<String, dynamic>.from(jsonDecode(f.readAsStringSync()) as Map);
+      final j = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       final crumbs = [for (final c in (j['crumbs'] as List? ?? const [])) '$c'];
       record('hangKilled', 'Die App reagierte nicht mehr und wurde beendet.', null, crumbs,
           (j['since'] as num?)?.toInt());
       pendingNotice = entries.value.first;
     } catch (_) {}
-    try {
-      f.deleteSync();
-    } catch (_) {}
   }
 
   static Future<void> _startWatchdog() async {
-    final hangPath = _hangFile?.path;
-    if (hangPath == null) return;
-    final back = ReceivePort();
+    if (!_stored) return;
     try {
-      await Isolate.spawn(_watchdog, [back.sendPort, hangPath, hangAfter.inMilliseconds]);
-    } catch (_) {
-      return;
-    }
-    back.listen((msg) {
-      if (msg is SendPort) {
-        _dog = msg;
-        for (final c in _crumbs) {
-          msg.send(['crumb', c]);
-        }
-      } else if (msg is List && msg.first == 'hang') {
+      _dog = await _store.startWatchdog(hangAfter.inMilliseconds, maxCrumbs, (msg) {
         // Oberfläche reagiert wieder: Hänger protokollieren
-        final crumbs = [for (final c in msg[3] as List) '$c'];
-        record('hang', 'Die Oberfläche reagierte ${(msg[2] as int) ~/ 1000} s lang nicht.', null, crumbs,
-            msg[1] as int);
-      }
-    });
-    _beat = Timer.periodic(const Duration(milliseconds: 500), (_) => _dog?.send(['beat']));
+        final crumbs = [for (final c in msg[2] as List) '$c'];
+        record('hang', 'Die Oberfläche reagierte ${(msg[1] as int) ~/ 1000} s lang nicht.', null, crumbs,
+            msg[0] as int);
+      });
+    } catch (_) {
+      _dog = null;
+    }
+    final dog = _dog;
+    if (dog == null) return;
+    for (final c in _crumbs) {
+      dog(['crumb', c]);
+    }
   }
 
   /// App geht in den Hintergrund / kommt zurück (dann keine Hänger melden).
-  static void setActive(bool active) => _dog?.send([active ? 'resume' : 'pause']);
+  static void setActive(bool active) => _dog?.call([active ? 'resume' : 'pause']);
 
   @visibleForTesting
   static void stopForTest() {
-    _beat?.cancel();
-    _dog?.send(['stop']);
-  }
-
-  static void _watchdog(List<Object?> args) {
-    final back = args[0] as SendPort;
-    final path = args[1] as String;
-    final limit = args[2] as int;
-    final port = ReceivePort();
-    back.send(port.sendPort);
-    final crumbs = <String>[];
-    var last = DateTime.now().millisecondsSinceEpoch;
-    var paused = false;
-    int? hangSince;
-    final file = File(path);
-    late final Timer timer;
-    port.listen((msg) {
-      if (msg is! List) return;
-      switch (msg.first) {
-        case 'beat':
-          final now = DateTime.now().millisecondsSinceEpoch;
-          if (hangSince != null) {
-            back.send(['hang', hangSince, now - hangSince!, List.of(crumbs)]);
-            hangSince = null;
-            try {
-              file.deleteSync();
-            } catch (_) {}
-          }
-          last = now;
-        case 'crumb':
-          crumbs.add(msg[1] as String);
-          if (crumbs.length > maxCrumbs) crumbs.removeAt(0);
-        case 'pause':
-          paused = true;
-        case 'resume':
-          paused = false;
-          last = DateTime.now().millisecondsSinceEpoch;
-        case 'stop':
-          timer.cancel();
-          port.close();
-      }
-    });
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (paused || hangSince != null || now - last < limit) return;
-      hangSince = last;
-      try {
-        file.writeAsStringSync(jsonEncode({'since': last, 'crumbs': crumbs}));
-      } catch (_) {}
-    });
+    _dog?.call(['stop']);
   }
 }
