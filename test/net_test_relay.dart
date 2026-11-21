@@ -41,9 +41,9 @@ class TestRelay {
   }
 
   Future<void> stop() async {
-    for (final room in rooms.values) {
+    for (final room in rooms.values.toList()) {
       await room.host?.close();
-      for (final g in room.guests.values) {
+      for (final g in room.guests.values.toList()) {
         await g.close();
       }
     }
@@ -121,7 +121,7 @@ class TestRelay {
           }
           room.host = ws;
           _send(ws, RelayFrame.hosted(code, token, resumed: true));
-          for (final e in room.guests.entries) {
+          for (final e in room.guests.entries.toList()) {
             _send(e.value, RelayFrame.hostOnline());
             if (announceOnResume) _send(ws, RelayFrame.peerJoined(e.key));
           }
@@ -181,7 +181,7 @@ class TestRelay {
         case 'all':
           final d = f.str('d');
           if (d == null) return;
-          for (final g in room.guests.values) {
+          for (final g in room.guests.values.toList()) {
             _send(g, RelayFrame.toGuest(d));
           }
         case 'kick':
@@ -202,13 +202,13 @@ class TestRelay {
       room.host = null;
       if (ws.closeCode == 4000) {
         rooms.remove(c.room);
-        for (final g in room.guests.values) {
+        for (final g in room.guests.values.toList()) {
           _send(g, RelayFrame.closed());
           g.close(1000);
         }
         room.guests.clear();
       } else {
-        for (final g in room.guests.values) {
+        for (final g in room.guests.values.toList()) {
           _send(g, RelayFrame.hostOffline());
         }
       }
