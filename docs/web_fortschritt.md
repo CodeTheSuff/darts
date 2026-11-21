@@ -7,12 +7,12 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 - Produktiv-Server-Adresse unbekannt → Platzhalter an einer Stelle.
 
 ## Phase 1 – Planung & Fundament (allein)
-- [ ] Code der Kopplung gelesen (link.dart, link_coordinator.dart, link_screen.dart, sync.dart, storage.dart, error_log.dart)
-- [ ] Probe-Build `flutter build web` + Fehlerliste
-- [ ] docs/web_architektur.md (Protokoll, Transport, Zuständigkeiten, Tests)
-- [ ] Gemeinsames Paket packages/darts_protocol + Ordner server/, deploy/
-- [ ] Version 3.0.0
-- [ ] Commit Phase 1
+- [x] Code der Kopplung gelesen (link.dart, link_coordinator.dart, link_screen.dart, sync.dart, storage.dart, error_log.dart)
+- [x] Probe-Build `flutter build web` + Fehlerliste → kompiliert! dart:io scheitert erst zur Laufzeit (Link, ErrorLog/path_provider)
+- [x] docs/web_architektur.md (Protokoll, Transport, Zuständigkeiten, Tests)
+- [x] Gemeinsames Paket packages/darts_protocol + Ordner server/, deploy/
+- [x] Version 3.0.0
+- [x] Commit Phase 1
 
 ## Phase 2 – parallel (4 Agenten, Worktrees)
 - [ ] A Server
@@ -31,3 +31,6 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 - [ ] Commit, Memory, Push
 
 ## Bitte prüfen (Entscheidungen, die ich allein getroffen habe)
+- Online-Raum-Codes sind 6-stellig (z. B. „K7M 2QX“) und werden vom Server vergeben – der 4-stellige WLAN-Code wäre online zu leicht zu erraten bzw. würde zwischen verschiedenen Nutzern kollidieren. Neue Geräte müssen weiterhin am Host bestätigt werden.
+- „Kurz zwischenspeichern“ umgesetzt als: Raum + Code bleiben 24 h gültig (nur Metadaten im RAM); Spielstände/Namen speichert der Server NICHT – der Stand liegt auf dem Host-Gerät und wird nach Wiederverbindung neu verteilt. Datensparsamer bei gleichem Nutzen.
+- Online kann jedes Gerät Host sein, auch ein iPhone im Browser.

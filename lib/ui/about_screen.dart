@@ -9,10 +9,17 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '2.10.1';
+const appVersion = '3.0.0';
+
+/// Android versionCode (muss zu pubspec.yaml passen) – für den Update-Vergleich mit dem Server.
+const appBuild = 19;
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  // Vorläufig – Phase 3 ergänzt die endgültige Liste.
+  '3.0.0': [
+    (Icons.public_rounded, 'Online spielen', 'Über den Server per Raum-Code – auch mit iPhone und von verschiedenen Orten'),
+  ],
   '2.10.1': [
     (Icons.swap_calls_rounded, 'Checkout-Training abwechselnd', '121, Catch 40 und Checkout-Training: je 3 Darts, dann ist der Nächste dran'),
     (Icons.skip_next_rounded, 'Runde überspringen', 'Ist einer fertig, kann der Rest der Runde nach Rückfrage übersprungen werden'),

@@ -14,7 +14,7 @@ void main() {
   for (final size in const [Size(412, 915), Size(360, 740)]) {
     testWidgets('X01 und Cricket laufen ohne Layoutfehler (${size.width.toInt()}×${size.height.toInt()})',
         (tester) async {
-      SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '2.10.1', 'sound': false});
+      SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '3.0.0', 'sound': false});
       await Store.init();
       tester.view.physicalSize = size * 3;
       tester.view.devicePixelRatio = 3;

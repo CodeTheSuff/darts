@@ -1,0 +1,10 @@
+name: darts_protocol
+description: Gemeinsames Protokoll zwischen Darts-App und Vermittlungs-Server (Relais).
+version: 3.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dev_dependencies:
+  test: ^1.25.0
