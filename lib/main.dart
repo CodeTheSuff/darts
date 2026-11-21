@@ -14,10 +14,13 @@ import 'ui/link_coordinator.dart';
 import 'ui/look.dart';
 import 'ui/theme.dart';
 import 'net/link.dart';
+import 'platform/web_hints.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Store.init();
+  // Browser: Audio-Freischaltung (iOS), Speicher-Schutz, Hinweise. Android: nichts.
+  await WebHints.init();
   ErrorLog.situation = () {
     final l = Link.I;
     final link = switch (l.role) {

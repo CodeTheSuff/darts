@@ -5,6 +5,7 @@ import '../data/storage.dart';
 import '../data/tournament_store.dart';
 import '../games/catalog.dart';
 import '../net/link.dart';
+import '../platform/web_notices.dart';
 import 'game_screen.dart';
 import 'link_coordinator.dart';
 import 'about_screen.dart';
@@ -283,6 +284,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         ?resumeCard,
         _tabTitle(0),
+        // Nur im Browser: „Zum Home-Bildschirm“ (iPhone) und Backup-Erinnerung
+        const WebNotices(),
         KeyedSubtree(key: _kX01, child: _modeCard(modeById('x01'))),
         GlowCard(
           key: _kTour,

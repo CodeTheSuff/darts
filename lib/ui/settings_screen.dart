@@ -2,11 +2,12 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../data/sound.dart';
 import '../data/storage.dart';
 import '../data/sync.dart';
+import '../platform/platform_env.dart';
+import '../platform/web_hints.dart';
 import 'look.dart';
 import 'about_screen.dart';
 import 'share_screens.dart';
@@ -49,15 +50,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _export() async {
     try {
-      final json = Store.exportBackup();
-      final now = DateTime.now();
-      String two(int v) => v.toString().padLeft(2, '0');
-      final name = 'darts_backup_${now.year}-${two(now.month)}-${two(now.day)}.json';
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile.fromData(utf8.encode(json), mimeType: 'application/json', name: name)],
-        fileNameOverrides: [name],
-        subject: 'Darts – Backup',
-      ));
+      // Android: Teilen-Dialog. Browser: Download (iPhone/iPad: Teilen → „In Dateien sichern“).
+      final ok = await WebHints.exportBackup();
+      if (ok && Plat.I.isWeb) _snack('Backup gespeichert');
+      if (mounted) setState(() {});
     } catch (e) {
       _snack('Export fehlgeschlagen: $e');
     }
@@ -250,6 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
           const SizedBox(height: 18),
           const SectionTitle('Daten'),
+          if (Plat.I.isWeb) _webDataHint(),
           _group([
             _switch(Icons.sync_rounded, 'Automatisch abgleichen',
                 'Gekoppelte Handys tauschen Spielerdaten beim Koppeln und nach jedem Spiel aus', Store.autoSync,
@@ -260,7 +257,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShareScreen()));
             }),
             _action(Icons.file_open_rounded, 'Daten importieren', 'Spielerdaten oder Backup öffnen', _import),
-            _action(Icons.ios_share_rounded, 'Backup exportieren', 'Komplette Sicherung als Datei', _export),
+            _action(
+                Plat.I.isWeb ? Icons.download_rounded : Icons.ios_share_rounded,
+                'Backup exportieren',
+                Plat.I.isWeb
+                    ? 'Komplette Sicherung als Datei · ${WebHints.lastBackupLabel}'
+                    : 'Komplette Sicherung als Datei',
+                _export),
             _action(Icons.restart_alt_rounded, 'Statistiken zurücksetzen', 'Spieler bleiben erhalten', () async {
               if (await _confirm('Statistiken zurücksetzen?',
                   'Alle Averages, Bestleistungen und Bilanzen werden gelöscht.', 'Zurücksetzen')) {
@@ -335,6 +338,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     setState(() => Store.roomCode = v);
     _snack('Raum-Code ist jetzt $v. Er gilt ab dem nächsten geöffneten Raum.');
+  }
+
+  /// Browser: Daten liegen nur hier – Hinweis auf Backup und (iPhone) Home-Bildschirm.
+  Widget _webDataHint() {
+    final ios = Plat.I.isIos && !Plat.I.isStandalone;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+      child: Text(
+        'Im Browser liegen Spieler und Statistiken nur auf diesem Gerät in diesem Browser. '
+        'Sichere sie ab und zu mit „Backup exportieren“'
+        '${ios ? ' und lege Darts in Safari über Teilen → „Zum Home-Bildschirm“ ab, sonst löscht Safari die Daten nach einiger Zeit ohne Nutzung' : ''}.',
+        style: TextStyle(color: C.muted, fontSize: 13),
+      ),
+    );
   }
 
   Widget _group(List<Widget> children) => GlowCard(
