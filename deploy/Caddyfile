@@ -1,0 +1,34 @@
+# Darts – Caddy als Reverse-Proxy mit automatischem HTTPS (Let's Encrypt).
+#
+# Mit Docker (docker compose --profile https up -d): DOMAIN kommt aus .env, das Ziel ist der
+# Container "darts". Ohne Docker (Caddy direkt auf dem Server): DOMAIN als Umgebungsvariable setzen
+# oder unten {$DOMAIN} durch die echte Adresse ersetzen – Ziel ist dann 127.0.0.1:8080.
+#
+# WebSockets (/ws) leitet Caddy automatisch richtig weiter, dafür ist nichts extra nötig.
+# Voraussetzung: DNS der Domain zeigt auf diesen Server, Ports 80 und 443 sind von außen offen.
+
+# Optional: E-Mail für Hinweise von Let's Encrypt (Block einkommentieren und anpassen).
+# {
+# 	email admin@example.org
+# }
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Caddy setzt X-Forwarded-For/-Proto selbst; WebSocket-Upgrade geht automatisch.
+	reverse_proxy {$DARTS_UPSTREAM:127.0.0.1:8080} {
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

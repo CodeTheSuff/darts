@@ -1,0 +1,71 @@
+# Darts – Vermittlungs-Server + Web-App (siehe ANLEITUNG_HOSTING.md)
+#
+# Variante 1 – eigener Reverse-Proxy (nginx, Traefik, vorhandener Caddy …) leitet auf 127.0.0.1:8080:
+#     docker compose up -d --build
+#
+# Variante 2 – mitgelieferter Caddy holt das HTTPS-Zertifikat automatisch (Ports 80/443 müssen frei sein):
+#     docker compose --profile https up -d --build
+#
+# Einstellungen stehen in .env – vorher anlegen:  cp .env.example .env
+
+name: darts
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  darts:
+    build: .
+    image: darts-server:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Im Container fest – bitte nicht über .env ändern.
+      PORT: "8080"
+      HOST: "0.0.0.0"
+      WEB_DIR: /app/web
+      APK_DIR: /app/apk
+      VERSION_FILE: /app/version.json
+      # Der Container ist nur über einen Reverse-Proxy erreichbar (Port nur auf 127.0.0.1),
+      # deshalb die echte Besucher-IP aus X-Forwarded-For nehmen (für Rate-Limit/Sperre).
+      TRUST_PROXY: "true"
+    ports:
+      # Nur lokal erreichbar. Für einen Proxy auf demselben Rechner; andere Portnummer über DARTS_HOST_PORT.
+      - "127.0.0.1:${DARTS_HOST_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 100
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - darts
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      DARTS_UPSTREAM: darts:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  # Zertifikate von Let's Encrypt – bleiben bei Updates erhalten.
+  caddy_data:
+  caddy_config:
