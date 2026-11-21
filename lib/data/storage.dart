@@ -406,6 +406,25 @@ class Store {
     if (RegExp(r'^\d{4}$').hasMatch(v)) _p.setString('roomCode', v);
   }
 
+  // ---------------------------------------------------------------- Online-Kopplung (3.0.0)
+
+  /// Eigene Server-Adresse (Überschreibung der Standard-Adresse, z. B. "http://192.168.0.10:8080").
+  static String? get serverUrl => _p.getString('serverUrl');
+  static set serverUrl(String? v) =>
+      v == null || v.trim().isEmpty ? _p.remove('serverUrl') : _p.setString('serverUrl', v.trim());
+
+  /// Zuletzt eigener Online-Raum (Code vom Server) – damit er gleich bleibt.
+  static String? get onlineRoom => _p.getString('onlineRoom');
+  static set onlineRoom(String? v) => v == null ? _p.remove('onlineRoom') : _p.setString('onlineRoom', v);
+
+  /// Geheimes Host-Token zum Zurückholen des eigenen Online-Raums.
+  static String? get onlineToken => _p.getString('onlineToken');
+  static set onlineToken(String? v) => v == null ? _p.remove('onlineToken') : _p.setString('onlineToken', v);
+
+  /// Zeitpunkt der letzten Update-Prüfung (ms seit 1970, 0 = nie).
+  static int get lastUpdateCheck => _p.getInt('lastUpdateCheck') ?? 0;
+  static set lastUpdateCheck(int v) => _p.setInt('lastUpdateCheck', v);
+
   /// Geräte, mit denen dieses Gerät schon verbunden war (neueste zuerst).
   static List<KnownHost> get knownHosts {
     try {
@@ -443,7 +462,15 @@ class Store {
     final c = code ?? h.code;
     if (h.address == address && h.port == port && h.code == c) return;
     l[i] = KnownHost(
-        device: h.device, name: h.name, address: address, port: port, code: c, viewer: h.viewer, key: h.key, t: h.t);
+        device: h.device,
+        name: h.name,
+        address: address,
+        port: port,
+        code: c,
+        viewer: h.viewer,
+        key: h.key,
+        t: h.t,
+        room: h.room);
     _saveKnown(l);
   }
 
@@ -669,13 +696,35 @@ class KnownHost {
     this.viewer = false,
     this.key,
     int? t,
+    this.room,
   }) : t = t ?? DateTime.now().millisecondsSinceEpoch;
 
   /// Gemeinsamer Schlüssel nach der ersten Erlaubnis (dann ohne Code verbinden).
   final String? key;
 
-  KnownHost withKey(String? k) =>
-      KnownHost(device: device, name: name, address: address, port: port, code: code, viewer: viewer, key: k, t: t);
+  /// Online-Raum-Code dieses Hosts (Vermittlungs-Server), null = nur aus dem WLAN bekannt.
+  final String? room;
+
+  /// Über den Server erreichbar.
+  bool get online => room != null && room!.isNotEmpty;
+
+  /// Im WLAN bekannt (Adresse gespeichert).
+  bool get lan => address.isNotEmpty;
+
+  KnownHost withKey(String? k) => KnownHost(
+      device: device, name: name, address: address, port: port, code: code, viewer: viewer, key: k, t: t, room: room);
+
+  /// Kopie mit geänderten Angaben (nicht genannte bleiben gleich).
+  KnownHost copyWith({String? name, String? address, int? port, String? code, bool? viewer, String? room}) => KnownHost(
+        device: device,
+        name: name ?? this.name,
+        address: address ?? this.address,
+        port: port ?? this.port,
+        code: code ?? this.code,
+        viewer: viewer ?? this.viewer,
+        key: key,
+        room: room ?? this.room,
+      );
 
   final String device;
   final String name;
@@ -688,7 +737,8 @@ class KnownHost {
   final int t;
 
   Map<String, dynamic> toJson() =>
-      {'device': device, 'name': name, 'address': address, 'port': port, 'code': code, 'viewer': viewer, 't': t, 'key': key};
+      {'device': device, 'name': name, 'address': address, 'port': port, 'code': code, 'viewer': viewer, 't': t, 'key': key,
+        if (room != null) 'room': room};
 
   factory KnownHost.fromJson(Map<String, dynamic> j) => KnownHost(
         device: j['device'] as String,
@@ -699,5 +749,6 @@ class KnownHost {
         viewer: j['viewer'] as bool? ?? false,
         key: j['key'] as String?,
         t: (j['t'] as num?)?.toInt(),
+        room: j['room'] as String?,
       );
 }
