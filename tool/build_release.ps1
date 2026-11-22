@@ -27,7 +27,8 @@
 .PARAMETER Notes
   Änderungsliste für version.json (statt aus about_screen.dart gelesen).
 .PARAMETER Domain
-  Domain des Servers, z. B. "darts.example.de". Dann wird zuerst die Release-APK mit fest
+  Domain des Servers, z. B. "darts.example.de". Ohne Angabe wird deploy\domain.txt gelesen
+  (eintragen mit tool\set_domain.ps1 bzw. Domain_eintragen.cmd). Dann wird zuerst die Release-APK mit fest
   eingebauter Server-Adresse gebaut (flutter build apk --dart-define=DARTS_SERVER_URL=https://<Domain>)
   und nach APK\Darts_<version>.apk kopiert; außerdem steht die Domain schon in .env.example,
   sodass install.sh beim Freund ohne Rückfrage durchläuft. Braucht android\key.properties.
@@ -157,6 +158,17 @@ if ($SkipServer) {
 # ---------------------------------------------------------------- APK
 $apkName = "Darts_$version.apk"
 $apkUrl = $null
+if ($Domain -eq '') {
+    # Standard: die mit tool\set_domain.ps1 eingetragene Domain
+    $domainFile = Join-Path $root 'deploy\domain.txt'
+    if (Test-Path $domainFile) {
+        foreach ($line in [System.IO.File]::ReadAllLines($domainFile)) {
+            $t = $line.Trim()
+            if ($t -ne '' -and -not $t.StartsWith('#')) { $Domain = $t; break }
+        }
+        if ($Domain -ne '') { Write-Host "Domain aus deploy\domain.txt: $Domain" }
+    }
+}
 $Domain = $Domain.Trim().ToLower() -replace '^https?://', '' -replace '/+$', ''
 if ($Domain -ne '') {
     if ($Domain -notmatch '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$') {
@@ -330,5 +342,5 @@ if ($SkipApk) {
     Write-Warning 'Ohne APK: Selbst-Update der Android-App ist mit diesem Paket nicht möglich.'
 }
 if ($Domain -eq '') {
-    Write-Warning 'Ohne -Domain: In der APK steht keine Server-Adresse, install.sh fragt beim Freund nach der Domain.'
+    Write-Warning 'Ohne Domain: In der APK steht keine Server-Adresse, install.sh fragt beim Freund nach der Domain. Eintragen mit Domain_eintragen.cmd.'
 }
