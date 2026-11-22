@@ -131,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
           target: () => rectOf(_kLink),
           icon: Icons.wifi_tethering_rounded,
           title: 'Handys koppeln',
-          text: 'Mehrere Handys spielen zusammen, ein Tablet wird zur Anzeige an der Wand. Im Turnier spielt jedes Handy auf seiner eigenen Scheibe.',
+          text: 'Online per Raum-Code – auch mit iPhones im Browser und von verschiedenen Orten – oder im WLAN ohne Internet. Ein Tablet wird zur Anzeige an der Wand, im Turnier spielt jedes Handy auf seiner eigenen Scheibe.',
         ),
         CoachStep(
           target: () => rectOf(_kStats),

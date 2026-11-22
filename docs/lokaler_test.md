@@ -67,7 +67,7 @@ Test vom Handy-Browser: `http://<PC-IP>:8080/health` muss eine Antwort zeigen. W
 ## 5. Geräte einrichten
 
 - **Android-APK 3.0.0:** installieren (Claude: `adb install -r APK\Darts_3.0.0.apk`).
-  In der App **Koppeln → Erweitert → Server-Adresse** auf `http://<PC-IP>:8080` setzen.
+  In der App oben auf das Koppeln-Symbol tippen, **„Online“** wählen, unten **„Erweitert“** aufklappen und die **Server-Adresse** auf `http://<PC-IP>:8080` setzen.
   (2.10.1 kennt den Server noch nicht – vorher einmal auf 3.0.0 aktualisieren.)
 - **Browser** (PC: Chrome; Tablet/anderes Handy): `http://<PC-IP>:8080` öffnen – die Web-App nimmt automatisch
   ihren eigenen Server.

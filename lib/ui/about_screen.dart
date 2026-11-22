@@ -16,9 +16,12 @@ const appBuild = 19;
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
-  // Vorläufig – Phase 3 ergänzt die endgültige Liste.
   '3.0.0': [
-    (Icons.public_rounded, 'Online spielen', 'Über den Server per Raum-Code – auch mit iPhone und von verschiedenen Orten'),
+    (Icons.public_rounded, 'Online spielen', 'Über den Server per 6-stelligem Raum-Code – auch von verschiedenen Orten'),
+    (Icons.phone_iphone_rounded, 'Darts im Browser', 'Web-App für iPhone, iPad und jeden Browser – spielt online mit Android zusammen'),
+    (Icons.system_update_rounded, 'Updates direkt vom Server', 'Die App meldet neue Versionen und lädt sie selbst herunter'),
+    (Icons.ac_unit_rounded, 'Neues Logo', 'Eisblauer Pfeil im Frost-Rahmen'),
+    (Icons.sort_rounded, 'Statistik sortiert', 'Wer zuletzt gespielt hat, steht oben'),
   ],
   '2.10.1': [
     (Icons.swap_calls_rounded, 'Checkout-Training abwechselnd', '121, Catch 40 und Checkout-Training: je 3 Darts, dann ist der Nächste dran'),
