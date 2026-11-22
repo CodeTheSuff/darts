@@ -73,6 +73,8 @@ pruefe_alles() {
   pruef 'Web-App: / liefert index.html mit Flutter' sh -c "curl -sfk --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/ | grep -q flutter_bootstrap"
   pruef 'Web-App: main.dart.js vorhanden' sh -c "curl -sfk -o /dev/null --max-time 20 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/main.dart.js"
   pruef 'Web-App: manifest.json' sh -c "curl -sfk --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/manifest.json | grep -q Darts"
+  pruef 'Seite /app mit Download und Verbinden-Link auf https://'"$DOMAIN" sh -c "curl -sfk --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/app | grep -q 'intent://connect?server=https%3A%2F%2F$DOMAIN'"
+  pruef 'Seite /app verlinkt die APK' sh -c "curl -sfk --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/app | grep -q 'href=\"https://$DOMAIN/apk/'"
   pruef 'Raum-Link /?room=ABC234 liefert die App' sh -c "curl -sfk --max-time 10 --resolve $DOMAIN:443:127.0.0.1 'https://$DOMAIN/?room=ABC234' | grep -q flutter_bootstrap"
   pruef 'sw.js wird nicht gecacht' sh -c "curl -sfk -D - -o /dev/null --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/sw.js | grep -qi 'cache-control:.*no-cache'"
   pruef 'HSTS-Header gesetzt' sh -c "curl -sfk -D - -o /dev/null --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/ | grep -qi strict-transport-security"

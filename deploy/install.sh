@@ -207,8 +207,16 @@ starte
 warte_gesund
 if pruefe_https; then
   printf '\n%sFertig! Darts läuft unter https://%s%s\n' "$GRUEN$FETT" "$DOMAIN" "$AUS"
-  echo '  iPhone: Adresse in Safari öffnen → Teilen → „Zum Home-Bildschirm“.'
-  echo '  Android: App 3.0.0 installieren – die Adresse ist schon eingebaut.'
+  echo
+  printf '  %sAndroid:%s auf dem Handy https://%s/app öffnen → App herunterladen,\n' "$FETT" "$AUS" "$DOMAIN"
+  echo '           danach „App mit diesem Server verbinden“ tippen. Fertig.'
+  printf '  %siPhone:%s  https://%s in Safari öffnen → Teilen → „Zum Home-Bildschirm“.\n' "$FETT" "$AUS" "$DOMAIN"
+  if command -v qrencode >/dev/null 2>&1; then
+    echo
+    echo '  QR-Code für Android (mit der Handy-Kamera scannen):'
+    qrencode -t ANSIUTF8 -m 2 "https://$DOMAIN/app" | sed 's/^/    /'
+  fi
+  echo
   echo '  Update später: neues ZIP daneben entpacken und dort wieder "bash install.sh" starten.'
 else
   printf '\n%sDarts läuft, aber HTTPS ist noch nicht erreichbar – siehe Hinweise oben.%s\n' "$GELB" "$AUS"

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_static/shelf_static.dart';
 
+import 'app_page.dart';
 import 'config.dart';
 import 'log.dart';
 import 'version_source.dart';
@@ -72,6 +73,7 @@ class HttpApp {
     if (path == 'ws') {
       return Response(HttpStatus.upgradeRequired, body: 'WebSocket erwartet', headers: {'Upgrade': 'websocket'});
     }
+    if (path == 'app' || path == 'app/') return _appPage(request);
     if (segs.isNotEmpty && segs.first == 'apk') return _apk(request, segs);
     return _web(request, segs);
   }
@@ -106,6 +108,23 @@ class HttpApp {
     final raw = await versions.raw();
     if (raw == null) return _notFound();
     return Response.ok(raw, headers: _jsonHeaders);
+  }
+
+  /// Seite zum Einrichten der Android-App (Download + „App mit diesem Server verbinden“).
+  Future<Response> _appPage(Request request) async {
+    final origin = serverOrigin(request, publicUrl: config.publicUrl, trustProxy: config.trustProxy);
+    final info = await versions.info();
+    String? apk;
+    final a = info?.apkUrl;
+    if (a != null && a.isNotEmpty) {
+      final u = Uri.tryParse(a);
+      apk = u != null && u.hasScheme ? a : '$origin/${a.startsWith('/') ? a.substring(1) : a}';
+    }
+    return Response.ok(appPageHtml(origin: origin, info: info, apkUrl: apk), headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    });
   }
 
   Future<Response> _apk(Request request, List<String> segs) async {

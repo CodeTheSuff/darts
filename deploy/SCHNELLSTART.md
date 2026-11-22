@@ -28,6 +28,16 @@ Das Skript
 
 Bei „Fertig! Darts läuft unter https://…“ ist alles erledigt. Gib Simon kurz Bescheid.
 
+## So kommen die Spieler zur App
+
+- **Android:** auf dem Handy `https://<deine-domain>/app` öffnen → „Android-App herunterladen“ →
+  installieren → zurück auf die Seite und „App mit diesem Server verbinden“ tippen.
+  Damit ist die App fertig eingerichtet (Online-Spiel und Updates laufen über deinen Server).
+- **iPhone/iPad/Computer:** `https://<deine-domain>` im Browser öffnen. Auf dem iPhone in Safari:
+  Teilen → „Zum Home-Bildschirm“.
+
+Neue Versionen: Simon schickt ein neues ZIP (siehe „Update“). Die Apps melden das Update dann von selbst.
+
 ## Danach
 
 | Befehl | Wozu |

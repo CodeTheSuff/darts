@@ -230,6 +230,18 @@ Block wieder einkommentieren, erneut `nginx -t` und `reload`.
 
 ---
 
+## 5a. Spieler einrichten: Seite `/app`
+
+Unter `https://<deine-domain>/app` liegt eine kleine Seite für die Spieler:
+
+- **„Android-App herunterladen“** – die APK aus `apk/` (Version laut `version.json`)
+- **„App mit diesem Server verbinden“** – öffnet die installierte App und trägt diesen Server ein
+  (Link `darts://connect?server=…`; die App fragt vorher nach und prüft die Verbindung)
+- **„Im Browser spielen“** – für iPhone, iPad und Computer
+
+Die App braucht deshalb keine fest eingebaute Adresse – dasselbe Paket passt zu jedem Server.
+Die Adresse auf der Seite kommt aus `PUBLIC_URL` (in `.env`, setzt `install.sh` automatisch).
+
 ## 6. Prüfen, ob alles läuft
 
 ```bash

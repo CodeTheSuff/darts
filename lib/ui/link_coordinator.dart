@@ -127,6 +127,25 @@ class LinkCoordinator {
     Link.I.stopDiscovery();
   }
 
+  /// Kopplung scheitert an der App-Version: erklären und – wenn diese App zu alt ist – Update anbieten.
+  static Future<void> _versionMismatch(VersionMismatch why) async {
+    if (why == VersionMismatch.selfTooOld && await UpdateUi.checkNow(force: true)) return;
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await showDialog<void>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: const Text('App-Versionen passen nicht'),
+        content: Text(why == VersionMismatch.selfTooOld
+            ? 'Das Raum-Gerät hat eine neuere Darts-Version als dieses Gerät. Bitte aktualisiere die App hier '
+                '(Koppeln → Online → Erweitert → „Nach Updates suchen“) und tritt danach wieder bei.'
+            : 'Das Raum-Gerät hat eine ältere Darts-Version als dieses Gerät. Bitte aktualisiere die App dort '
+                'und öffne den Raum danach neu.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+      ),
+    );
+  }
+
   static void init() {
     if (_init) return;
     _init = true;
@@ -139,6 +158,7 @@ class LinkCoordinator {
     l.onJoinRequest = _askJoin;
     l.onDirect = _onDirect;
     l.onUpdateRequired = (info) => unawaited(UpdateUi.showRequired(info));
+    l.onVersionMismatch = (why) => unawaited(_versionMismatch(why));
     MatchController.onMatchCommitted = (_) => _scheduleSync();
     TournamentStore.changes.addListener(_scheduleSync);
     var wasConnected = false;

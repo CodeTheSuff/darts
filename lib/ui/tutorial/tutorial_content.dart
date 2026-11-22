@@ -868,7 +868,7 @@ List<TutChapter> buildTutorial() {
             'Auf den anderen Geräten den Code eingeben und „Mitspielen“ oder „Nur anzeigen“ wählen. Ein neues Gerät musst du beim ersten Mal auf dem Raum-Gerät erlauben – danach erkennen sich die Geräte von selbst.',
             (_) => _online('join')),
         TutPage('Server und Updates',
-            'Unter „Erweitert“ stehen die Server-Adresse, „Verbindung testen“ und „Nach Updates suchen“. Gibt es eine neue Version, bietet die App den Download direkt an.',
+            'Am einfachsten öffnest du auf dem Handy die Seite „/app“ des Servers (z. B. https://darts.…/app) und tippst „App mit diesem Server verbinden“ – dann ist alles eingetragen. Unter „Erweitert“ stehen die Server-Adresse, „Verbindung testen“ und „Nach Updates suchen“. Gibt es eine neue Version, bietet die App den Download direkt an. Hat ein Gerät im Raum eine zu alte App, sagt Darts Bescheid, wo aktualisiert werden muss.',
             (_) => _online('server')),
         TutPage('Raum im WLAN',
             'Ohne Internet: Ein Handy öffnet unter „Im WLAN“ einen Raum. Alle Geräte müssen im selben WLAN sein. Beim ersten Mal bestätigst du ein neues Gerät.',

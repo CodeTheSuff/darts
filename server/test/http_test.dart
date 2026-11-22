@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:darts_protocol/darts_protocol.dart';
 import 'package:darts_server/darts_server.dart';
+import 'package:darts_server/src/app_page.dart';
+import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
 import 'helpers.dart';
@@ -61,6 +63,50 @@ void main() {
     expect(info.build, 20);
     File('${root.path}/version.json').deleteSync();
     expect((await httpGet(s, '/version.json')).status, 404);
+  });
+
+  test('/app: Download-Knopf, Verbinden-Link mit eigener Adresse, sicher ausgeliefert', () async {
+    final res = await httpGet(s, '/app');
+    expect(res.status, 200);
+    expect(res.headers['content-type'], startsWith('text/html'));
+    expect(res.headers['cache-control'], 'no-cache');
+    expect(res.headers['content-security-policy'], contains("default-src 'none'"));
+    final html = utf8.decode(res.body);
+    final origin = 'http://127.0.0.1:${s.port}';
+    expect(html, contains('href="$origin/apk/Darts_3.0.0.apk"'));
+    expect(html, contains('Version 3.0.0'));
+    final enc = Uri.encodeQueryComponent(origin);
+    expect(html, contains('intent://connect?server=$enc#Intent;scheme=darts;package=de.simon.darts;'));
+    expect(html, contains('darts://connect?server=$enc'));
+    expect((await httpGet(s, '/app/')).status, 200);
+    // ohne version.json: Seite geht trotzdem, nur ohne Download
+    File('${root.path}/version.json').deleteSync();
+    final res2 = await httpGet(s, '/app');
+    expect(res2.status, 200);
+    expect(utf8.decode(res2.body), contains('noch nicht auf diesem Server'));
+  });
+
+  test('/app: PUBLIC_URL hat Vorrang, gefälschter Host wird ohne TRUST_PROXY ignoriert', () async {
+    expect(
+        serverOrigin(Request('GET', Uri.parse('http://intern:8080/app'), headers: {'x-forwarded-host': 'boese.de'}),
+            publicUrl: 'https://darts.beispiel.de/', trustProxy: false),
+        'https://darts.beispiel.de');
+    expect(
+        serverOrigin(Request('GET', Uri.parse('http://intern:8080/app'), headers: {'x-forwarded-host': 'boese.de'}),
+            publicUrl: '', trustProxy: false),
+        'http://intern:8080');
+    expect(
+        serverOrigin(
+            Request('GET', Uri.parse('http://darts:8080/app'),
+                headers: {'x-forwarded-host': 'darts.beispiel.de', 'x-forwarded-proto': 'https'}),
+            publicUrl: '',
+            trustProxy: true),
+        'https://darts.beispiel.de');
+    expect(
+        serverOrigin(Request('GET', Uri.parse('http://darts:8080/app'), headers: {'x-forwarded-host': 'a"><script>'}),
+            publicUrl: '', trustProxy: true),
+        'http://darts:8080');
+    expect(appPageHtml(origin: 'https://x.de"><b>'), isNot(contains('"><b>')));
   });
 
   test('/apk: Download mit richtigem Typ, keine Pfad-Tricks', () async {

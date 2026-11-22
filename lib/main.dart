@@ -14,6 +14,7 @@ import 'ui/link_coordinator.dart';
 import 'ui/look.dart';
 import 'ui/theme.dart';
 import 'net/link.dart';
+import 'net/server_link.dart';
 import 'platform/web_hints.dart';
 
 Future<void> main() async {
@@ -57,6 +58,10 @@ class _DartsAppState extends State<DartsApp> with WidgetsBindingObserver {
       showHangNotice();
       // Nach Absturz/Neustart die Kopplung wiederherstellen (nur kurz danach).
       unawaited(LinkCoordinator.restoreSession());
+      // Link „App mit diesem Server verbinden“ (Seite https://<server>/app)
+      ServerLink.confirm = _confirmServer;
+      ServerLink.done = _serverDone;
+      unawaited(ServerLink.init());
     });
   }
 
@@ -132,6 +137,41 @@ class RouteLog extends NavigatorObserver {
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _set(newRoute, 'Ersetzt durch');
+}
+
+Future<bool> _confirmServer(String server) async {
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) return false;
+  final ok = await showDialog<bool>(
+    context: ctx,
+    builder: (c) => AlertDialog(
+      title: const Text('Mit Server verbinden?'),
+      content: Text('Online-Spiele und Updates laufen dann über\n\n$server\n\n'
+          'Das kannst du jederzeit unter Koppeln → Online → Erweitert ändern.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Abbrechen')),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Verbinden')),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
+void _serverDone(String server, String? error) {
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) return;
+  if (error == null) {
+    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text('Verbunden mit $server')));
+    return;
+  }
+  showDialog<void>(
+    context: ctx,
+    builder: (c) => AlertDialog(
+      title: const Text('Server nicht erreichbar'),
+      content: Text('$server\n\n$error\n\nDie Adresse wurde nicht übernommen.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+    ),
+  );
 }
 
 /// Meldet nach dem Start, dass die App beim letzten Mal eingefroren war.

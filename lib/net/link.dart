@@ -18,6 +18,23 @@ export 'relay.dart' show RelayStatus;
 
 enum LinkRole { none, host, client }
 
+/// Stand des Spiel-/Kopplungsformats zwischen den Geräten. Erhöhen, wenn sich Nachrichten oder der
+/// Spielstand so ändern, dass ältere Apps sie nicht mehr richtig verstehen – und dann ggf.
+/// [linkMinCompat] mitziehen. Apps ohne Angabe (bis 3.0.0) zählen als 2.
+const linkCompat = 3;
+
+/// Ältester Stand, mit dem diese App noch zusammen spielt. Ältere Geräte bekommen „Bitte aktualisieren“.
+const linkMinCompat = 2;
+
+/// Warum ein Gerät wegen der App-Version nicht mitspielen kann.
+enum VersionMismatch {
+  /// Diese App ist älter, als das Raum-Gerät erlaubt.
+  selfTooOld,
+
+  /// Das Raum-Gerät hat eine ältere App, als diese erlaubt.
+  hostTooOld,
+}
+
 /// Über welchen Weg gekoppelt wird: direkt im WLAN oder über den Vermittlungs-Server.
 enum LinkMode { lan, online }
 
@@ -101,6 +118,19 @@ class Link extends ChangeNotifier {
 
   /// Host: fragt, ob ein neues Gerät beitreten darf (true = erlauben und merken).
   Future<bool> Function(String device, String name)? onJoinRequest;
+
+  /// Eigener Format-Stand und ältester erlaubter Stand (Tests stellen hier andere Versionen nach;
+  /// [compat] = 0 verhält sich wie eine App bis 3.0.0 ohne Angabe).
+  @visibleForTesting
+  int compat = linkCompat;
+  @visibleForTesting
+  int minCompat = linkMinCompat;
+
+  /// Gast: Kopplung scheitert an der App-Version (Hinweis + Update anbieten).
+  void Function(VersionMismatch why)? onVersionMismatch;
+
+  /// Gast: letzter Versionskonflikt (für die Anzeige), sonst null.
+  VersionMismatch? versionMismatch;
 
   static const maxPeers = 8;
   static const maxFails = 5;
@@ -410,6 +440,12 @@ class Link extends ChangeNotifier {
     peer.name = name.length > 40 ? name.substring(0, 40) : name;
     peer.viewer = msg['viewer'] == true;
     if (peer.device.isEmpty) return _deny(peer);
+    // Zu alte App? Dann gar nicht erst koppeln – der Gast bekommt „Bitte aktualisieren“.
+    final guestCompat = msg['compat'];
+    if ((guestCompat is num ? guestCompat.toInt() : 2) < minCompat) {
+      ErrorLog.crumb('Kopplung: ${peer.name} hat eine zu alte App');
+      return _deny(peer, 'update');
+    }
 
     // Bekanntes Gerät mit Schlüssel: gegenseitiger Nachweis, kein Code nötig.
     if (msg['auth'] == true) {
@@ -420,6 +456,7 @@ class Link extends ChangeNotifier {
       peer.challenge = randomHex(16);
       _send(peer.ws, {
         't': 'auth',
+        if (compat > 0) 'compat': compat,
         'hostDevice': Store.deviceId,
         'proof': authProof(key, 'host', nonce, Store.deviceId),
         'nonce': peer.challenge,
@@ -439,7 +476,7 @@ class Link extends ChangeNotifier {
     }
     final key = randomHex(32);
     Store.trustGuest(peer.device, peer.name, key);
-    _send(peer.ws, {'t': 'welcome', 'key': key, 'hostDevice': Store.deviceId});
+    _send(peer.ws, {'t': 'welcome', if (compat > 0) 'compat': compat, 'key': key, 'hostDevice': Store.deviceId});
     _approve(peer);
   }
 
@@ -619,6 +656,7 @@ class Link extends ChangeNotifier {
     _lastTourIn = null;
     awaitingApproval = false;
     denied = false;
+    versionMismatch = null;
     joinedAsViewer = viewer;
     role = LinkRole.client;
     hostAddress = null;
@@ -702,6 +740,7 @@ class Link extends ChangeNotifier {
     _nonce = randomHex(16);
     _send(ws, {
       't': 'hello',
+      if (compat > 0) 'compat': compat,
       'device': deviceForTest ?? Store.deviceId,
       'name': Store.deviceName,
       'viewer': joinedAsViewer,
@@ -753,9 +792,33 @@ class Link extends ChangeNotifier {
   /// Gast: zuletzt empfangenes Turnier (für „unverändert“-Stände).
   Object? _lastTourIn;
 
+  /// Gast: wegen der App-Version aufhören (Kopplung bleibt gespeichert – nach dem Update geht es weiter).
+  void _versionStop(VersionMismatch why) {
+    awaitingApproval = false;
+    denied = true;
+    _wantConnected = false;
+    versionMismatch = why;
+    status = why == VersionMismatch.selfTooOld
+        ? 'Diese App ist zu alt für den Raum – bitte aktualisieren'
+        : 'Das Raum-Gerät hat eine ältere App – bitte dort aktualisieren';
+    ErrorLog.crumb('Kopplung: Versionskonflikt (${why.name})');
+    _ws?.close();
+    _giveUp();
+    notifyListeners();
+    onVersionMismatch?.call(why);
+  }
+
   void _clientReceive(Object? data) {
     final msg = _decode(data);
     if (msg == null) return;
+    // Raum-Gerät zu alt für diese App? (Hosts bis 3.0.0 schicken keine Angabe → 2)
+    if (msg['t'] == 'auth' || msg['t'] == 'welcome') {
+      final hc = msg['compat'];
+      if ((hc is num ? hc.toInt() : 2) < minCompat) {
+        _versionStop(VersionMismatch.hostTooOld);
+        return;
+      }
+    }
     switch (msg['t']) {
       case 'auth':
         // Host muss beweisen, dass er der bekannte ist – sonst sofort trennen.
@@ -791,6 +854,8 @@ class Link extends ChangeNotifier {
         awaitingApproval = true;
         status = 'Warte auf Bestätigung am anderen Gerät …';
         notifyListeners();
+      case 'denied' when msg['reason'] == 'update':
+        _versionStop(VersionMismatch.selfTooOld);
       case 'denied':
         awaitingApproval = false;
         denied = true;
