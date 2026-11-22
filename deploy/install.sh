@@ -54,8 +54,19 @@ pruefe_dateien() {
 # Holt Einstellungen aus einer älteren Version (Nachbarordner darts_server_*), falls hier keine .env liegt.
 uebernimm_alte_env() {
   [ -f .env ] && return 0
-  local hier alt
+  local hier alt laufend
   hier="$(pwd -P)"
+  # 1. Ordner der laufenden Darts-Installation (Docker merkt sich ihn) – egal, wo das neue ZIP liegt.
+  laufend="$(docker ps -q --filter label=com.docker.compose.project=darts --filter label=com.docker.compose.service=darts 2>/dev/null | head -n1 || true)"
+  if [ -n "$laufend" ]; then
+    alt="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$laufend" 2>/dev/null || true)"
+    if [ -n "$alt" ] && [ -f "$alt/.env" ] && [ "$(cd "$alt" && pwd -P)" != "$hier" ]; then
+      cp "$alt/.env" .env
+      ok "Einstellungen übernommen aus $alt/.env"
+      return 0
+    fi
+  fi
+  # 2. Sonst der neueste Nachbarordner darts_server_*.
   alt="$(ls -1dt ../darts_server_*/.env 2>/dev/null | while read -r e; do
            [ "$(cd "$(dirname "$e")" && pwd -P)" = "$hier" ] || { echo "$e"; break; }
          done || true)"
