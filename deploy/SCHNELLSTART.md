@@ -15,8 +15,8 @@ Geräten**, auf dem Server wird nichts gespeichert. Der Server braucht ungefähr
 ## Installieren (ca. 5 Minuten)
 
 ```bash
-unzip darts_server_3.0.0.zip
-cd darts_server_3.0.0
+unzip darts_server_3.1.0.zip
+cd darts_server_3.1.0
 bash install.sh
 ```
 

@@ -9,19 +9,22 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '3.0.0';
+const appVersion = '3.1.0';
 
 /// Android versionCode (muss zu pubspec.yaml passen) – für den Update-Vergleich mit dem Server.
 const appBuild = 20;
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '3.1.0': [
+    (Icons.link_rounded, 'Mit einem Tipp verbinden', 'Seite /app des Servers: App laden und „App mit diesem Server verbinden“'),
+    (Icons.verified_rounded, 'Versionen passen zusammen', 'Ist eine App im Raum zu alt, sagt Darts, wo aktualisiert werden muss'),
+    (Icons.crop_square_rounded, 'Logo bis zum Rand', 'Der Frost-Rahmen sitzt jetzt ganz außen – auf Android passend zur Icon-Form'),
+  ],
   '3.0.0': [
     (Icons.public_rounded, 'Online spielen', 'Über den Server per 6-stelligem Raum-Code – auch von verschiedenen Orten'),
     (Icons.phone_iphone_rounded, 'Darts im Browser', 'Web-App für iPhone, iPad und jeden Browser – spielt online mit Android zusammen'),
     (Icons.system_update_rounded, 'Updates direkt vom Server', 'Die App meldet neue Versionen und lädt sie selbst herunter'),
-    (Icons.link_rounded, 'Mit einem Tipp verbinden', 'Seite /app des Servers: App laden und „App mit diesem Server verbinden“'),
-    (Icons.verified_rounded, 'Versionen passen zusammen', 'Ist eine App im Raum zu alt, sagt Darts, wo aktualisiert werden muss'),
     (Icons.ac_unit_rounded, 'Neues Logo', 'Eisblauer Pfeil im Frost-Rahmen'),
     (Icons.sort_rounded, 'Statistik sortiert', 'Wer zuletzt gespielt hat, steht oben'),
   ],
