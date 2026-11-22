@@ -143,6 +143,8 @@ flutter_launcher_icons:
   image_path: "assets/icon/icon.png"
   adaptive_icon_background: "assets/icon/background.png"
   adaptive_icon_foreground: "assets/icon/foreground.png"
+  # Kein zusätzlicher Rand: foreground.png ist schon passend zur Iconform (Rahmen am Rand) aufbereitet.
+  adaptive_icon_foreground_inset: 0
   min_sdk_android: 21
 
 flutter_native_splash:
