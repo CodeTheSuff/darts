@@ -251,8 +251,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _switch(Icons.sync_rounded, 'Automatisch abgleichen',
                 'Gekoppelte Handys tauschen Spielerdaten beim Koppeln und nach jedem Spiel aus', Store.autoSync,
                 (v) => setState(() => Store.autoSync = v)),
-            _action(Icons.pin_rounded, 'Raum-Code: ${Store.roomCode}',
-                'Fester Code beim Koppeln, damit andere Geräte sich ohne Neueingabe verbinden', _editRoomCode),
+            // Der feste Raum-Code gilt nur für die WLAN-Kopplung (online vergibt der Server die Codes).
+            if (!Plat.I.isWeb)
+              _action(Icons.pin_rounded, 'Raum-Code: ${Store.roomCode}',
+                  'Fester Code fürs Koppeln im WLAN, damit andere Geräte sich ohne Neueingabe verbinden', _editRoomCode),
             _action(Icons.group_rounded, 'Spieler teilen', 'Statistiken an ein anderes Handy senden', () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShareScreen()));
             }),

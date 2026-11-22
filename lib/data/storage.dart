@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../games/catalog.dart';
 import '../games/x01.dart';
 import '../models/player.dart';
+import '../platform/platform_env.dart';
 
 /// Bestleistung und Bilanz eines Spielers in einem Trainings-/Minispiel-Modus.
 class ModeStats {
@@ -194,7 +195,16 @@ class Store {
     return id;
   }
 
-  static String get deviceName => _p.getString('deviceName') ?? 'Handy ${deviceId.substring(0, 4).toUpperCase()}';
+  static String get deviceName =>
+      _p.getString('deviceName') ?? '${_deviceKind()} ${deviceId.substring(0, 4).toUpperCase()}';
+
+  /// Standard-Gerätename: im Browser „iPhone“ bzw. „Browser“ statt „Handy“ (für den Freigabe-Dialog).
+  static String _deviceKind() {
+    try {
+      if (Plat.I.isWeb) return Plat.I.isIos ? 'iPhone' : 'Browser';
+    } catch (_) {}
+    return 'Handy';
+  }
   static set deviceName(String v) => _p.setString('deviceName', v.trim());
 
   static String newId(String prefix) =>
