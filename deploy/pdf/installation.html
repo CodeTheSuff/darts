@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Darts – Installation auf dem Server</title>
+<style>
+  @page { size: A4; margin: 16mm 16mm 16mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1d2330; margin: 0; }
+  header { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #7FD3F5; padding-bottom: 10px; margin-bottom: 14px; }
+  header img { width: 58px; height: 58px; border-radius: 13px; }
+  h1 { font-size: 21pt; margin: 0; }
+  .sub { color: #5b6678; font-size: 10pt; }
+  h2 { font-size: 13pt; margin: 18px 0 6px; color: #12324a; }
+  .box { background: #f2f6fa; border-left: 4px solid #7FD3F5; padding: 8px 12px; border-radius: 4px; margin: 8px 0; }
+  .warn { border-left-color: #e0a030; background: #fdf6ea; }
+  pre { background: #1e2430; color: #e8eef6; padding: 10px 12px; border-radius: 6px; font-size: 10pt; margin: 6px 0; white-space: pre-wrap; }
+  code { font-family: Consolas, "Courier New", monospace; }
+  p code, li code, td code { background: #e8edf3; padding: 1px 4px; border-radius: 3px; font-size: 9.5pt; }
+  ol, ul { margin: 4px 0 4px 20px; padding: 0; }
+  li { margin: 3px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 10pt; margin: 6px 0; }
+  td { border-bottom: 1px solid #dde3ea; padding: 5px 6px; vertical-align: top; }
+  td:first-child { white-space: nowrap; width: 38%; }
+  .step { display: inline-block; width: 20px; height: 20px; border-radius: 10px; background: #7FD3F5; color: #0e1a22;
+          text-align: center; font-weight: 700; font-size: 10pt; line-height: 20px; margin-right: 6px; }
+  .page2 { page-break-before: always; }
+  footer { margin-top: 16px; color: #8090a0; font-size: 8.5pt; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="../../web/icons/Icon-192.png" alt="">
+  <div>
+    <h1>Darts – Installation auf dem Server</h1>
+    <div class="sub">Kurzanleitung für Docker · Version {{VERSION}}</div>
+  </div>
+</header>
+
+<p>Darts besteht aus einer <b>Web-App</b> (iPhone, iPad, Browser) und einem kleinen <b>Vermittlungs-Server</b>,
+über den die Handys online miteinander spielen. Spielstände und Statistiken liegen nur auf den Geräten –
+auf dem Server wird nichts gespeichert. Er braucht ca. 30–60 MB RAM.</p>
+
+<h2>Was du vorher brauchst</h2>
+<ul>
+  <li>Linux-Server mit <b>Docker</b> und <b>docker compose</b> (v2)</li>
+  <li>eine <b>(Sub-)Domain</b>, z. B. <code>darts.deinedomain.de</code>, mit einem <b>A-Eintrag</b> auf die IP des Servers</li>
+  <li><b>Ports 80 und 443</b> von außen erreichbar (Firewall / Router-Weiterleitung) und nicht von einem anderen Webserver belegt</li>
+</ul>
+<div class="box warn">Läuft auf dem Server schon nginx, Traefik, Nginx Proxy Manager o. Ä. auf Port 80/443?
+Dann nicht diese Kurzanleitung, sondern <b>Weg A2b</b> in <code>ANLEITUNG_HOSTING.md</code> nehmen.</div>
+
+<h2><span class="step">1</span>ZIP auf den Server kopieren</h2>
+<pre><code>scp darts_server_{{VERSION}}.zip benutzer@server:~</code></pre>
+
+<h2><span class="step">2</span>Entpacken und installieren</h2>
+<pre><code>unzip darts_server_{{VERSION}}.zip
+cd darts_server_{{VERSION}}
+bash install.sh</code></pre>
+<p>Das Skript fragt nach der Domain und erledigt den Rest:</p>
+<ol>
+  <li>prüft Docker, DNS und die Ports 80/443,</li>
+  <li>legt die Einstellungen <code>.env</code> an,</li>
+  <li>startet die Container <code>darts</code> (Server) und <code>caddy</code> (HTTPS-Zertifikat von Let's Encrypt, wird automatisch erneuert),</li>
+  <li>prüft am Ende, ob <code>https://&lt;domain&gt;</code> erreichbar ist.</li>
+</ol>
+<div class="box">Erscheint <b>„Fertig! Darts läuft unter https://…“</b>, ist alles erledigt. Die Container starten nach einem
+Neustart des Servers von selbst.</div>
+
+<h2><span class="step">3</span>Spieler einrichten</h2>
+<table>
+  <tr><td><b>Android</b></td><td>Auf dem Handy <code>https://&lt;domain&gt;/app</code> öffnen → „Android-App herunterladen“ → installieren →
+    zurück auf die Seite und <b>„App mit diesem Server verbinden“</b> tippen. Fertig.</td></tr>
+  <tr><td><b>iPhone / iPad</b></td><td><code>https://&lt;domain&gt;</code> in Safari öffnen → Teilen → „Zum Home-Bildschirm“.</td></tr>
+  <tr><td><b>Computer</b></td><td><code>https://&lt;domain&gt;</code> im Browser öffnen.</td></tr>
+</table>
+
+<div class="page2"></div>
+
+<h2>Update (neue Version von Simon)</h2>
+<pre><code>unzip darts_server_&lt;neu&gt;.zip
+cd darts_server_&lt;neu&gt;
+bash install.sh</code></pre>
+<p>Einstellungen und Zertifikat werden automatisch übernommen. Die Apps melden die neue Version danach von selbst.
+Den alten Ordner kannst du anschließend löschen. <b>Zurück zur alten Version:</b> in den alten Ordner wechseln und dort
+<code>bash install.sh</code> starten.</p>
+
+<h2>Nützliche Befehle</h2>
+<table>
+  <tr><td><code>bash install.sh status</code></td><td>Läuft alles? (Container + HTTPS-Prüfung)</td></tr>
+  <tr><td><code>bash install.sh logs</code></td><td>Logs ansehen (Strg+C beendet)</td></tr>
+  <tr><td><code>bash install.sh stop</code></td><td>Darts anhalten</td></tr>
+  <tr><td><code>bash install.sh</code></td><td>wieder starten</td></tr>
+</table>
+
+<h2>Wenn etwas klemmt</h2>
+<table>
+  <tr><td>„Port 80/443 schon belegt“</td><td>Ein anderer Webserver läuft → Weg A2b in <code>ANLEITUNG_HOSTING.md</code>.</td></tr>
+  <tr><td>HTTPS antwortet nicht</td><td>Meist zeigt die Domain noch nicht auf den Server (DNS braucht manchmal bis zu einer Stunde)
+    oder Port 80/443 ist nicht freigegeben. <code>bash install.sh logs</code> zeigt, was Caddy meldet.</td></tr>
+  <tr><td>„Kein Zugriff auf Docker“</td><td><code>sudo bash install.sh</code></td></tr>
+  <tr><td>Android: „App nicht installiert“</td><td>Im Browser erlauben, Apps zu installieren (fragt Android beim ersten Mal).</td></tr>
+</table>
+
+<h2>Datenschutz &amp; Sicherheit</h2>
+<ul>
+  <li>Der Server speichert keine Spieler, Namen oder Spielstände – er reicht nur Nachrichten zwischen den Geräten weiter.</li>
+  <li>Der Container läuft ohne Root-Rechte, mit nur lesbarem Dateisystem und begrenztem Speicher (256 MB).</li>
+  <li>Von außen ist nur HTTPS über Caddy erreichbar.</li>
+</ul>
+
+<p style="margin-top:14px">Ausführliche Anleitung (anderer Webserver, ohne Docker, alle Einstellungen):
+<code>ANLEITUNG_HOSTING.md</code> im selben Ordner.</p>
+
+<footer>Darts {{VERSION}} · Fragen an Simon</footer>
+</body>
+</html>

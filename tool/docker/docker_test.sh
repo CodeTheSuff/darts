@@ -106,6 +106,7 @@ case "$PHASE" in
     echo "  entpackt nach $DIR"
     pruef 'install.sh ist im ZIP' test -f "$DIR/install.sh"
     pruef 'SCHNELLSTART.md ist im ZIP' test -f "$DIR/SCHNELLSTART.md"
+    pruef 'PDF-Anleitung ist im ZIP' sh -c "head -c 5 '$DIR/Installation_Darts_Server.pdf' | grep -q '%PDF'"
     pruef 'keine .env im ZIP' test ! -f "$DIR/.env"
     pruef 'Server-Datei ist Linux-ELF x86-64' sh -c "file '$DIR/bin/darts_server' | grep -q 'ELF 64-bit.*x86-64'"
     pruef 'Textdateien mit LF (keine CRLF)' sh -c "! grep -l \$'\r' '$DIR/install.sh' '$DIR/docker-compose.yml' '$DIR/Caddyfile' '$DIR/.env.example' '$DIR/Dockerfile'"

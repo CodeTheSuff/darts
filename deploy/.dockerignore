@@ -7,3 +7,4 @@ nginx-darts.conf
 darts.service
 docker-compose.yml
 install.sh
+*.pdf

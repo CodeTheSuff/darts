@@ -250,6 +250,28 @@ if ($Domain -ne '') {
     [System.IO.File]::WriteAllText($envFile, $envText, $utf8)
     Write-Host "Domain $Domain in .env.example eingetragen"
 }
+# Kurzanleitung als PDF (Edge druckt deploy\pdf\installation.html, Version eingesetzt)
+$pdfSrc = Join-Path $root 'deploy\pdf\installation.html'
+$edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not (Test-Path $pdfSrc)) { throw 'deploy\pdf\installation.html fehlt.' }
+if ($null -eq $edge) { throw 'Microsoft Edge nicht gefunden – wird für die PDF-Anleitung gebraucht.' }
+$pdfTmp = Join-Path $root 'deploy\pdf\_render.html'
+$pdfOut = Join-Path $stage 'Installation_Darts_Server.pdf'
+[System.IO.File]::WriteAllText($pdfTmp, ([System.IO.File]::ReadAllText($pdfSrc) -replace '\{\{VERSION\}\}', $version), $utf8)
+$pdfProfile = Join-Path $env:TEMP ('darts_pdf_' + [guid]::NewGuid().ToString('N'))
+try {
+    $pdfUri = ([System.Uri]$pdfTmp).AbsoluteUri
+    $p = Start-Process -FilePath $edge -PassThru -Wait -WindowStyle Hidden -ArgumentList @(
+        '--headless=new', '--disable-gpu', '--mute-audio', '--no-first-run', "--user-data-dir=$pdfProfile",
+        '--no-pdf-header-footer', "--print-to-pdf=$pdfOut", $pdfUri)
+} finally {
+    Remove-Item -Force $pdfTmp -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $pdfProfile -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path $pdfOut) -or (Get-Item $pdfOut).Length -lt 10000) { throw 'PDF-Anleitung konnte nicht erzeugt werden.' }
+Write-Host "PDF-Anleitung: $(Format-Size (Get-Item $pdfOut).Length)"
+
 $guide = Join-Path $root 'ANLEITUNG_HOSTING.md'
 if (-not (Test-Path $guide)) { throw 'ANLEITUNG_HOSTING.md fehlt.' }
 Copy-TextLf $guide (Join-Path $stage 'ANLEITUNG_HOSTING.md')
