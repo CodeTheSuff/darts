@@ -130,6 +130,13 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    // Ein Eingabefeld der vorigen Seite (Spielername, Raum-Code) darf den Fokus nicht behalten:
+    // Im Browser würde sonst der erste Tipper im Spiel nur den Fokus lösen und verloren gehen.
+    FocusManager.instance.primaryFocus?.unfocus();
+    // Meldungen der vorigen Seite (z. B. „Im Raum …“) lägen sonst unten über Double/Triple.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+    });
     WakelockPlus.enable().catchError((_) {});
     ctl.addListener(_onChange);
     Link.I.addListener(_onLink);

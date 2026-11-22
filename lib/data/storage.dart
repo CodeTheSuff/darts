@@ -217,6 +217,26 @@ class Store {
     return _log = out;
   }
 
+  /// Zeitpunkt des letzten Spiels je Spieler (aus dem Match-Protokoll).
+  static Map<String, int> lastPlayed() {
+    final out = <String, int>{};
+    for (final e in log) {
+      if (e.t > (out[e.pid] ?? 0)) out[e.pid] = e.t;
+    }
+    return out;
+  }
+
+  /// Spieler nach letztem Spiel sortiert (neueste zuerst); nie gespielt → unten, Reihenfolge bleibt.
+  static List<Profile> byLastPlayed(List<Profile> profiles) {
+    final last = lastPlayed();
+    final indexed = [for (var i = 0; i < profiles.length; i++) (i, profiles[i])];
+    indexed.sort((a, b) {
+      final c = (last[b.$2.id] ?? 0).compareTo(last[a.$2.id] ?? 0);
+      return c != 0 ? c : a.$1.compareTo(b.$1);
+    });
+    return [for (final e in indexed) e.$2];
+  }
+
   static void _saveLog() => _p.setString('matchlog', jsonEncode([for (final e in log) e.toJson()]));
 
   /// Fügt Einträge hinzu (bekannte werden übersprungen) und aktualisiert die

@@ -6,9 +6,10 @@ import '../net/link.dart';
 import 'logo.dart';
 
 // Farben aus dem Logo (Lila → Pink → Orange)
-const _purple = Color(0xFF8B2BD9);
-const _pink = Color(0xFFFF2E7E);
-const _orange = Color(0xFFFF8A1F);
+// Farben passend zum Eis-Logo (3.0.0): tiefes Eisblau, Cyan, Frostweiß
+const _purple = Color(0xFF2F6FD6);
+const _pink = Color(0xFF5FD8EE);
+const _orange = Color(0xFFDDF6FF);
 const _black = Color(0xFF050507);
 
 /// Wartebildschirm der Anzeige (Tablet), bis am Handy ein Spiel oder Turnier startet:

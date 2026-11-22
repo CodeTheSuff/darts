@@ -91,7 +91,10 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
-    final profiles = Store.profiles;
+    // Zuletzt aktive Spieler oben, wer am längsten nicht gespielt hat, rutscht nach unten.
+    final all = Store.profiles;
+    final color = {for (var i = 0; i < all.length; i++) all[i].id: C.players[i % 4]};
+    final profiles = Store.byLastPlayed(all);
     return Scaffold(
       appBar: AppBar(title: const Text('Statistik')),
       body: profiles.isEmpty
@@ -109,7 +112,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   _navCard(context, Icons.compare_arrows_rounded, 'Direktvergleich', 'Zwei Spieler gegeneinander',
                       HeadToHeadScreen(a: profiles[0].id, b: profiles[1].id)),
                 const SizedBox(height: 4),
-                for (var i = 0; i < profiles.length; i++) _tile(profiles[i], C.players[i % 4]),
+                for (final p in profiles) _tile(p, color[p.id]!),
               ],
             ),
     );
