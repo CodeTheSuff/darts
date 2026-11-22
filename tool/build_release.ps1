@@ -26,6 +26,11 @@
   Andere APK-Datei statt APK\Darts_<version>.apk.
 .PARAMETER Notes
   Änderungsliste für version.json (statt aus about_screen.dart gelesen).
+.PARAMETER Domain
+  Domain des Servers, z. B. "darts.example.de". Dann wird zuerst die Release-APK mit fest
+  eingebauter Server-Adresse gebaut (flutter build apk --dart-define=DARTS_SERVER_URL=https://<Domain>)
+  und nach APK\Darts_<version>.apk kopiert; außerdem steht die Domain schon in .env.example,
+  sodass install.sh beim Freund ohne Rückfrage durchläuft. Braucht android\key.properties.
 .PARAMETER BaseHref
   base href für den Web-Build (Standard "/"; z. B. "/darts/" bei Unterpfad).
 #>
@@ -36,6 +41,7 @@ param(
     [switch]$SkipApk,
     [string]$ApkPath = '',
     [string[]]$Notes = @(),
+    [string]$Domain = '',
     [string]$BaseHref = '/'
 )
 
@@ -151,6 +157,23 @@ if ($SkipServer) {
 # ---------------------------------------------------------------- APK
 $apkName = "Darts_$version.apk"
 $apkUrl = $null
+$Domain = $Domain.Trim().ToLower() -replace '^https?://', '' -replace '/+$', ''
+if ($Domain -ne '') {
+    if ($Domain -notmatch '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$') {
+        throw "Ungültige Domain: $Domain"
+    }
+    if (-not $SkipApk -and $ApkPath -eq '') {
+        Write-Step "Release-APK mit Server https://$Domain bauen"
+        if (-not (Test-Path (Join-Path $root 'android\key.properties'))) {
+            throw 'android\key.properties fehlt – ohne Release-Schlüssel keine APK.'
+        }
+        Invoke-Tool $flutter @('build', 'apk', '--release', "--dart-define=DARTS_SERVER_URL=https://$Domain") $root
+        $built = Join-Path $root 'build\app\outputs\flutter-apk\app-release.apk'
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'APK') | Out-Null
+        Copy-Item -Force $built (Join-Path $root "APK\$apkName")
+        Write-Host "APK\$apkName gebaut ($(Format-Size (Get-Item $built).Length))"
+    }
+}
 if ($SkipApk) {
     Write-Step 'APK übersprungen (-SkipApk)'
 } else {
@@ -201,11 +224,19 @@ Write-Host $json
 
 # ---------------------------------------------------------------- deploy + Anleitung
 Write-Step 'deploy-Dateien und Anleitung'
-$deployFiles = @('Dockerfile', 'docker-compose.yml', 'Caddyfile', 'nginx-darts.conf', 'darts.service', '.env.example', '.dockerignore')
+$deployFiles = @('Dockerfile', 'docker-compose.yml', 'Caddyfile', 'nginx-darts.conf', 'darts.service', '.env.example', '.dockerignore', 'install.sh', 'SCHNELLSTART.md')
 foreach ($f in $deployFiles) {
     $src = Join-Path $root "deploy\$f"
     if (-not (Test-Path $src)) { throw "deploy\$f fehlt." }
     Copy-TextLf $src (Join-Path $stage $f)
+}
+if ($Domain -ne '') {
+    # Domain gleich eintragen – install.sh übernimmt sie ohne Rückfrage.
+    $envFile = Join-Path $stage '.env.example'
+    $envText = [System.IO.File]::ReadAllText($envFile)
+    $envText = $envText -replace '(?m)^DOMAIN=.*$', "DOMAIN=$Domain" -replace '(?m)^PUBLIC_URL=.*$', "PUBLIC_URL=https://$Domain"
+    [System.IO.File]::WriteAllText($envFile, $envText, $utf8)
+    Write-Host "Domain $Domain in .env.example eingetragen"
 }
 $guide = Join-Path $root 'ANLEITUNG_HOSTING.md'
 if (-not (Test-Path $guide)) { throw 'ANLEITUNG_HOSTING.md fehlt.' }
@@ -251,7 +282,7 @@ try {
         $entry = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, "$name/$rel", [System.IO.Compression.CompressionLevel]::Optimal)
         # Unix-Rechte mitgeben (wird nicht von jedem unzip ausgewertet – Anleitung sagt chmod +x)
         try {
-            if ($rel -eq 'bin/darts_server') { $entry.ExternalAttributes = (0x81ED -shl 16) } else { $entry.ExternalAttributes = (0x81A4 -shl 16) }
+            if ($rel -eq 'bin/darts_server' -or $rel -eq 'install.sh') { $entry.ExternalAttributes = (0x81ED -shl 16) } else { $entry.ExternalAttributes = (0x81A4 -shl 16) }
         } catch { }
     }
 } finally {
@@ -297,4 +328,7 @@ if ($isTest) {
 }
 if ($SkipApk) {
     Write-Warning 'Ohne APK: Selbst-Update der Android-App ist mit diesem Paket nicht möglich.'
+}
+if ($Domain -eq '') {
+    Write-Warning 'Ohne -Domain: In der APK steht keine Server-Adresse, install.sh fragt beim Freund nach der Domain.'
 }

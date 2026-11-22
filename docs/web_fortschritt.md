@@ -48,3 +48,13 @@ Zusätzlich in 3.0.0: Eis-Logo, Statistik nach letztem Spiel sortiert, Gerätena
 - Online-Raum-Codes sind 6-stellig (z. B. „K7M 2QX“) und werden vom Server vergeben – der 4-stellige WLAN-Code wäre online zu leicht zu erraten bzw. würde zwischen verschiedenen Nutzern kollidieren. Neue Geräte müssen weiterhin am Host bestätigt werden.
 - „Kurz zwischenspeichern“ umgesetzt als: Raum + Code bleiben 24 h gültig (nur Metadaten im RAM); Spielstände/Namen speichert der Server NICHT – der Stand liegt auf dem Host-Gerät und wird nach Wiederverbindung neu verteilt. Datensparsamer bei gleichem Nutzen.
 - Online kann jedes Gerät Host sein, auch ein iPhone im Browser.
+
+## Docker-Vorbereitung für den Freund (2026-11-22)
+
+Der Freund nutzt **Docker** mit dem **mitgelieferten Caddy** (automatisches HTTPS).
+
+- `deploy/install.sh`: Installation und Update in einem Schritt. Prüft Docker, DNS und die Ports 80/443, legt `.env` an (übernimmt sie beim Update aus dem alten Ordner), startet und prüft HTTPS. Weitere Befehle: `status`, `logs`, `stop`. Mit Docker-Ersatz durchgespielt.
+- `deploy/SCHNELLSTART.md`: Kurzanleitung für den Freund. Kommt zusammen mit `install.sh` ins ZIP.
+- Domain zur Bauzeit: `defaultServerUrl` = `String.fromEnvironment('DARTS_SERVER_URL')`. `tool\build_release.ps1 -Domain darts.xy.de` baut die APK mit eingebauter Adresse und trägt die Domain in `.env.example` ein.
+- Lokaler Test: `tool\docker\docker_test.ps1` (WSL/Ubuntu, Docker Engine wird automatisch eingerichtet). Phasen: install → E2E über Caddy (wss) → restart → update/rollback → cleanup. `-Keep` lässt den Server für Browser- und Handy-Tests laufen. Die E2E-Option `DARTS_E2E_INSECURE=1` akzeptiert das Caddy-Testzertifikat.
+- **Offen:** WSL ist noch nicht installiert (Admin-Abfrage + Neustart durch Simon). Danach: `docker_test.ps1 -Keep`, Browser-Test gegen https://darts.localhost (stumm), APK über den Tunnel, ZIP mit `-Domain` bauen.

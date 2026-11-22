@@ -6,9 +6,14 @@ import 'web_bridge.dart';
 
 /// Produktiv-Adresse des Vermittlungs-Servers.
 ///
-/// OFFENER PUNKT: Server und Domain des Freundes sind noch nicht bekannt – bis dahin
-/// steht hier ein Platzhalter. Nur diese eine Stelle muss später angepasst werden.
-const defaultServerUrl = 'https://darts.example.invalid';
+/// Wird beim Bauen gesetzt: `--dart-define=DARTS_SERVER_URL=https://darts.example.de`
+/// (macht `tool/build_release.ps1 -Domain …` automatisch). Ohne Angabe steht hier ein
+/// Platzhalter – dann geht online nur mit selbst eingetragener Adresse (Einstellungen → Erweitert).
+/// Im Browser spielt das keine Rolle: Die Web-App nimmt immer den Server, von dem sie geladen wurde.
+const defaultServerUrl = String.fromEnvironment('DARTS_SERVER_URL', defaultValue: placeholderServerUrl);
+
+/// Platzhalter, solange keine echte Adresse eingebaut ist.
+const placeholderServerUrl = 'https://darts.example.invalid';
 
 /// Wo der Vermittlungs-Server liegt und wie man ihn erreicht.
 class ServerConfig {
@@ -24,7 +29,7 @@ class ServerConfig {
   }
 
   /// Ist noch die Platzhalter-Adresse eingestellt?
-  static bool get isPlaceholder => url == defaultServerUrl;
+  static bool get isPlaceholder => url == placeholderServerUrl;
 
   /// Eingabe vereinheitlichen: ohne Schema → http:// (lokal) bzw. https://, ohne „/“ am Ende.
   static String normalize(String input) {

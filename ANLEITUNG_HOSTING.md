@@ -82,6 +82,8 @@ darts_server_<version>/
 ├── nginx-darts.conf         nginx-Beispiel (Weg B oder eigener Proxy)
 ├── darts.service            systemd-Dienst (Weg B)
 ├── .env.example             alle Einstellungen mit Erklärung
+├── install.sh               Installation/Update mit Docker + Caddy in einem Schritt
+├── SCHNELLSTART.md          Kurzanleitung (Docker)
 └── ANLEITUNG_HOSTING.md     diese Anleitung
 ```
 
@@ -96,6 +98,19 @@ Hochladen z. B. mit `scp darts_server_<version>.zip benutzer@server:~` und dort 
 
 Das Image wird **auf dem Server** aus den fertigen Dateien gebaut (dauert Sekunden, es wird nichts kompiliert).
 Basis ist `debian:stable-slim`, der Dienst läuft als Nicht-root-Benutzer, nur lesend, ohne Zusatzrechte.
+
+### Kurzweg: `install.sh` (empfohlen für den mitgelieferten Caddy)
+
+```bash
+unzip darts_server_<version>.zip
+cd darts_server_<version>
+bash install.sh            # oder: bash install.sh darts.deinedomain.de
+```
+
+Das Skript erledigt A1 und A2a in einem Rutsch: prüft Docker, DNS und Ports 80/443, legt `.env` an,
+startet die Container und prüft am Ende `https://<domain>/health`. Bei einem Update übernimmt es die
+`.env` aus dem älteren Ordner `darts_server_*` daneben. Weitere Befehle: `bash install.sh status | logs | stop`.
+Kurzfassung für alles: `SCHNELLSTART.md`. Die Schritte A1–A2a unten sind dasselbe von Hand.
 
 ### A1. Vorbereiten
 
@@ -238,6 +253,9 @@ Simon schickt bei jeder neuen Version ein neues ZIP. Laufende Räume gehen beim 
 (die Geräte verbinden sich selbst neu, der Spielstand liegt auf dem Host-Gerät) – am besten also nicht mitten im Turnier.
 
 ### Docker (Weg A)
+
+Mit dem mitgelieferten Caddy reicht: neues ZIP neben das alte entpacken, in den neuen Ordner wechseln,
+`bash install.sh`. Von Hand:
 
 ```bash
 cd /opt/darts

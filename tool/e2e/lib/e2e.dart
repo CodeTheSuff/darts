@@ -71,6 +71,8 @@ class ServerUnderTest {
   static Future<ServerUnderTest> start() async {
     final external = Platform.environment['DARTS_E2E_URL'];
     if (external != null && external.isNotEmpty) {
+      // Lokaler Docker-Test mit Caddy-Testzertifikat (darts.localhost): Zertifikat nicht prüfen.
+      if (Platform.environment['DARTS_E2E_INSECURE'] == '1') HttpOverrides.global = _InsecureHttp();
       final s = ServerUnderTest._(Uri.parse(external.replaceAll(RegExp(r'/+$'), '')), null, null);
       await s._waitHealthy(const Duration(seconds: 15));
       return s;
@@ -183,6 +185,13 @@ class ServerUnderTest {
       await _temp?.delete(recursive: true);
     } catch (_) {}
   }
+}
+
+/// Nimmt jedes Zertifikat an – nur für den lokalen Test gegen `https://darts.localhost`.
+class _InsecureHttp extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) =>
+      super.createHttpClient(context)..badCertificateCallback = (_, _, _) => true;
 }
 
 class _Waiter {
