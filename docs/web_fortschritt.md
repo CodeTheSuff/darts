@@ -17,18 +17,22 @@ Grundlage: `docs/PROMPT_WEB_UMZUG.md`, Architektur: `docs/web_architektur.md`.
 ## Phase 2 – parallel (4 Agenten, Worktrees) – gestartet 2026-11-21 nach Commit dd5480d
 - [x] A Server – gemergt (81d7ae0), 38 Tests grün, Linux-Cross-Kompilierung ok, Leerlauf 15 MB RAM
 - [x] B Web-Tauglichkeit – gemergt (cb9e066), 335 Tests, Web-Build ok, headless Edge: Start/X01/Backup/Offline ok
-- [ ] C Kopplung in der App
+- [x] C Kopplung in der App – gemergt (200b47e), 352 Tests; Integrationstest gegen echten Server 5/5
 - [x] D Paket, Anleitung, E2E-Tests – gemergt (7e8f2cd), E2E 9/9 grün gegen echten Server
 
 ## Phase 3 – Zusammenführen (allein)
-- [ ] Merge aller Branches
-- [ ] analyze + alle Tests + build web + build apk
-- [ ] Lokaler Gesamttest vorbereitet (Server am PC, Geräte im WLAN)
-- [ ] Tutorial / Einführung / Changelog 3.0.0
-- [ ] APK\Darts_3.0.0.apk (+ adb install -r wenn angesteckt)
-- [ ] release\darts_server_3.0.0.zip (ohne Schlüssel geprüft)
-- [ ] iPhone-Test vorbereitet (cloudflared – vorher fragen!)
-- [ ] Commit, Memory, Push
+- [x] Merge aller Branches
+- [x] analyze + alle Tests + build web + build apk
+- [x] Lokaler Gesamttest: Browser (headless Edge) ↔ App über echten Server in beide Richtungen, lokales X01 im Browser, Statistik/Einstellungen/Training ohne Laufzeitfehler. Fix: SnackBar „Im Raum …“ verdeckte Double/Triple
+- [x] Tutorial / Einführung / Changelog 3.0.0
+- [x] APK\Darts_3.0.0.apk gebaut und signiert – [ ] Installation auf S24/Tablet (wartet auf Simon: Gerät anstecken)
+- [x] release\darts_server_3.0.0.zip (ohne Schlüssel geprüft)
+- [ ] iPhone-Test (wartet auf Simon: Leihgerät + Freigabe für cloudflared-Tunnel; Checkliste docs/ios_testliste.md)
+- [x] Commit, Memory
+
+Zusätzlich in 3.0.0: Eis-Logo, Statistik nach letztem Spiel sortiert, Gerätename iPhone/Browser im Web.
+
+**Alles, was ohne Simon geht, ist erledigt.** Offen nur: Geräte-Installation, iPhone-Test, Server-Art/Domain des Freundes (→ defaultServerUrl in lib/net/server_config.dart eintragen, APK neu bauen).
 
 ## Notizen für Phase 3
 - docs/lokaler_test.md: Menüpfad „Koppeln → Erweitert → Server-Adresse“ an echte UI von Agent C anpassen.
