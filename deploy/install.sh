@@ -82,8 +82,8 @@ pruefe_image() {
 # Neues Image laden – bei privatem Repo vorher einmal bei ghcr.io anmelden.
 lade_image() {
   if ! compose pull darts; then
-    warn 'Image konnte nicht geladen werden. Bei einem privaten Repo einmal anmelden:'
-    warn '  docker login ghcr.io -u <github-name>     (Passwort = Token mit Recht "read:packages")'
+    warn 'Image konnte nicht geladen werden: DARTS_IMAGE in .env und die Internetverbindung prüfen.'
+    warn 'Nur bei einem privaten Image: docker login ghcr.io -u <github-name> (Token mit "read:packages").'
     fehler 'Laden fehlgeschlagen.'
   fi
 }

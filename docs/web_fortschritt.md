@@ -70,3 +70,4 @@ Der Freund wünscht sich ein Repo mit CI/CD, das das Image nach ghcr.io legt. Si
 - `tool/github_release.ps1` bzw. `Release_veroeffentlichen.cmd`: Tests laufen lassen, APK bauen, Tag und Release mit der APK anlegen.
 - `install.sh` erkennt beide Wege (ZIP oder fertiges Image). Neu: `update` und `autoupdate an|aus` (crontab, 04:17). Watchtower habe ich bewusst nicht genommen: nicht mehr gepflegt und es bräuchte den Docker-Socket.
 - Lokaler Test: `tool/docker/ghcr_test.sh` (Registry localhost:5000 statt ghcr.io).
+- **Öffentlich (2026-11-23):** Die Historie habe ich auf die anonyme Adresse `233774341+CodeTheSuff@users.noreply.github.com` umgeschrieben. Danach Repo und Paket gelöscht und **öffentlich** neu angelegt, ohne Lizenz (alle Rechte bei Simon). Das Image `ghcr.io/codethesuff/darts` ist öffentlich, der anonyme Pull ist getestet. Die Sicherung des alten Stands liegt unter `C:\dev\darts_counter_backup_vor_public_2026-11-23.bundle`.

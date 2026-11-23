@@ -10,14 +10,12 @@ Auf dem Server wird nichts gespeichert – Spielstände liegen nur auf den Gerä
 - Linux-Server mit Docker + `docker compose` (v2)
 - (Sub-)Domain mit A-Eintrag auf den Server, Ports 80 und 443 frei und von außen erreichbar
   (läuft schon ein anderer Reverse-Proxy: siehe unten „Eigener Proxy“)
-- Zugriff auf das private Repo → Token mit Recht **`read:packages`**
-  (GitHub → Settings → Developer settings → Personal access tokens)
+- Das Image ist öffentlich – kein GitHub-Konto und kein Login nötig.
 
 ## Installieren
 
 ```bash
 unzip darts-docker.zip && cd darts-docker
-docker login ghcr.io -u <dein-github-name>      # Passwort = Token (read:packages)
 bash install.sh darts.deinedomain.de
 ```
 
