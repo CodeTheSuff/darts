@@ -1,0 +1,64 @@
+# Darts – fertiges Image von ghcr.io + Caddy (automatisches HTTPS).
+#
+#   bash install.sh                  installieren / starten
+#   bash install.sh update           neueste Version holen und neu starten
+#
+#   bash install.sh autoupdate an    jede Nacht (04:17) automatisch nach Updates schauen
+#
+# Einstellungen stehen in .env (install.sh legt sie aus .env.example an).
+
+name: darts
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  darts:
+    image: ${DARTS_IMAGE:-ghcr.io/codethesuff/darts:latest}
+    pull_policy: always
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8080"
+      HOST: "0.0.0.0"
+      WEB_DIR: /app/web
+      APK_DIR: /app/apk
+      VERSION_FILE: /app/version.json
+      TRUST_PROXY: "true"
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 100
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - darts
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      DARTS_UPSTREAM: darts:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -59,3 +59,14 @@ Der Freund nutzt **Docker** mit dem **mitgelieferten Caddy** (automatisches HTTP
 - Lokaler Test: `tool\docker\docker_test.ps1` (WSL/Ubuntu, Docker Engine wird automatisch eingerichtet). Phasen: install → E2E über Caddy (wss) → restart → update/rollback → cleanup. `-Keep` lässt den Server für Browser- und Handy-Tests laufen. Die E2E-Option `DARTS_E2E_INSECURE=1` akzeptiert das Caddy-Testzertifikat.
 - **Offen:** WSL ist noch nicht installiert (Admin-Abfrage + Neustart durch Simon). Danach: `docker_test.ps1 -Keep`, Browser-Test gegen https://darts.localhost (stumm), APK über den Tunnel, ZIP mit `-Domain` bauen.
 - **Domain an einer Stelle (2026-11-22):** `Domain_eintragen.cmd` (Doppelklick) bzw. `tool\set_domain.ps1` schreibt nach `deploy\domain.txt`. `build_release.ps1` liest die Datei automatisch: APK mit eingebauter Adresse plus Domain in `.env.example`. Die Web-App braucht nichts. Mit Docker (WSL) getestet: 179 Prüfungen und E2E grün, dazu Handy und iPhone über den Tunnel (Simon: „alles funktioniert“).
+
+## GitHub + ghcr.io (2026-11-23)
+
+Der Freund wünscht sich ein Repo mit CI/CD, das das Image nach ghcr.io legt. Simon hat entschieden: Konto **CodeTheSuff**, **privates** Repo, die **APK wird lokal gebaut** (der Schlüssel bleibt auf dem Laptop).
+
+- `docker/Dockerfile`: baut Web-App (offizielles Flutter 3.50.0 per git clone) und Server aus dem Quellcode. APK und version.json kommen aus `ci/`.
+- `.github/workflows/ci.yml`: bei jedem Push Protokoll-, Server- und E2E-Tests, dazu ein Probe-Build des Images mit Starttest.
+- `.github/workflows/release.yml`: bei einem GitHub-Release APK laden, version.json bauen, Image nach `ghcr.io/codethesuff/darts:{X.Y.Z,X.Y,latest}` pushen und `darts-docker.zip` (compose + Caddyfile + install.sh + .env.example + ANLEITUNG) ans Release hängen.
+- `tool/github_release.ps1` bzw. `Release_veroeffentlichen.cmd`: Tests laufen lassen, APK bauen, Tag und Release mit der APK anlegen.
+- `install.sh` erkennt beide Wege (ZIP oder fertiges Image). Neu: `update` und `autoupdate an|aus` (crontab, 04:17). Watchtower habe ich bewusst nicht genommen: nicht mehr gepflegt und es bräuchte den Docker-Socket.
+- Lokaler Test: `tool/docker/ghcr_test.sh` (Registry localhost:5000 statt ghcr.io).

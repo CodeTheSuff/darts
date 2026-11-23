@@ -6,6 +6,12 @@
 #   bash install.sh status          Zustand der Container + Prüfung
 #   bash install.sh logs            Logs ansehen (Strg+C beendet)
 #   bash install.sh stop            Darts anhalten (Einstellungen und Zertifikate bleiben)
+#   bash install.sh update          nur ghcr.io-Weg: neueste Version holen und neu starten
+#   bash install.sh autoupdate an   nur ghcr.io-Weg: jede Nacht (04:17) automatisch updaten (aus: … aus)
+#
+# Zwei Wege, automatisch erkannt:
+#   ZIP-Weg    (bin/darts_server liegt daneben)  -> Image wird hier gebaut
+#   ghcr.io-Weg (nur docker-compose.yml + Caddyfile) -> fertiges Image wird geladen
 #
 # Voraussetzungen: Linux-Server mit Docker + "docker compose" (v2), Domain zeigt per DNS auf den
 # Server, Ports 80 und 443 sind von außen erreichbar und nicht von einem anderen Programm belegt.
@@ -30,7 +36,12 @@ env_wert() { # env_wert NAME -> Wert aus .env (leer, wenn nicht da)
   sed -n "s/^$1=//p" .env | tail -n 1 | tr -d '\r'
 }
 
-compose() { docker compose --profile https "$@"; }
+# ZIP-Weg: Server-Datei liegt bei; sonst fertiges Image von ghcr.io
+if [ -e bin/darts_server ]; then MODUS=zip; else MODUS=image; fi
+
+compose() {
+  if [ "$MODUS" = zip ]; then docker compose --profile https "$@"; else docker compose "$@"; fi
+}
 
 ist_lokal() { case "$1" in localhost|*.localhost) return 0 ;; *) return 1 ;; esac; }
 
@@ -46,9 +57,35 @@ pruefe_docker() {
 }
 
 pruefe_dateien() {
-  for f in Dockerfile docker-compose.yml Caddyfile .env.example bin/darts_server web/index.html version.json; do
-    [ -e "$f" ] || fehler "Datei fehlt: $f – ZIP vollständig entpacken und install.sh im entpackten Ordner starten."
+  local liste
+  if [ "$MODUS" = zip ]; then
+    liste='Dockerfile docker-compose.yml Caddyfile .env.example bin/darts_server web/index.html version.json'
+  else
+    liste='docker-compose.yml Caddyfile .env.example'
+  fi
+  for f in $liste; do
+    [ -e "$f" ] || fehler "Datei fehlt: $f – install.sh im Ordner mit docker-compose.yml starten."
   done
+}
+
+# ghcr.io-Weg: Image-Adresse muss in .env stehen
+pruefe_image() {
+  [ "$MODUS" = image ] || return 0
+  local img
+  img="$(env_wert DARTS_IMAGE)"
+  if [ -z "$img" ] || printf '%s' "$img" | grep -q 'OWNER'; then
+    fehler 'In .env fehlt DARTS_IMAGE (z. B. DARTS_IMAGE=ghcr.io/<github-name>/darts:latest).'
+  fi
+  ok "Image: $img"
+}
+
+# Neues Image laden – bei privatem Repo vorher einmal bei ghcr.io anmelden.
+lade_image() {
+  if ! compose pull darts; then
+    warn 'Image konnte nicht geladen werden. Bei einem privaten Repo einmal anmelden:'
+    warn '  docker login ghcr.io -u <github-name>     (Passwort = Token mit Recht "read:packages")'
+    fehler 'Laden fehlgeschlagen.'
+  fi
 }
 
 # Holt Einstellungen aus einer älteren Version (Nachbarordner darts_server_*), falls hier keine .env liegt.
@@ -133,9 +170,34 @@ pruefe_ports() {
 }
 
 starte() {
-  schritt 'Darts bauen und starten (dauert beim ersten Mal 1–2 Minuten)'
-  chmod 0755 bin/darts_server 2>/dev/null || true
-  compose up -d --build --remove-orphans
+  if [ "$MODUS" = zip ]; then
+    schritt 'Darts bauen und starten (dauert beim ersten Mal 1–2 Minuten)'
+    chmod 0755 bin/darts_server 2>/dev/null || true
+    compose up -d --build --remove-orphans
+  else
+    schritt 'Darts laden und starten'
+    lade_image
+    compose up -d --remove-orphans
+  fi
+}
+
+# Nächtliches Update per crontab (nur ghcr.io-Weg)
+autoupdate() {
+  [ "$MODUS" = image ] || fehler 'Automatische Updates gibt es nur beim ghcr.io-Weg (fertiges Image).'
+  command -v crontab >/dev/null 2>&1 || fehler '"crontab" fehlt (Paket cron installieren).'
+  local hier zeile
+  hier="$(pwd -P)"
+  zeile="17 4 * * * cd '$hier' && bash install.sh update >> '$hier/update.log' 2>&1 # darts-autoupdate"
+  case "${1:-}" in
+    an|on)
+      { crontab -l 2>/dev/null | grep -v '# darts-autoupdate' || true; echo "$zeile"; } | crontab -
+      ok 'Automatische Updates an: jede Nacht um 04:17 (Protokoll: update.log)' ;;
+    aus|off)
+      { crontab -l 2>/dev/null | grep -v '# darts-autoupdate' || true; } | crontab -
+      ok 'Automatische Updates aus' ;;
+    *)
+      if crontab -l 2>/dev/null | grep -q '# darts-autoupdate'; then ok 'Automatische Updates: an'; else ok 'Automatische Updates: aus'; fi ;;
+  esac
 }
 
 warte_gesund() {
@@ -193,14 +255,32 @@ case "${1:-}" in
     compose down
     ok 'Darts angehalten. Neu starten: bash install.sh'
     exit 0 ;;
+  update)
+    [ "$MODUS" = image ] || fehler 'Beim ZIP-Weg: neues ZIP daneben entpacken und dort "bash install.sh" starten.'
+    pruefe_docker
+    DOMAIN="$(env_wert DOMAIN)"
+    pruefe_image
+    schritt 'Neueste Version laden'
+    alt="$(docker inspect -f '{{.Image}}' "$(compose ps -q darts 2>/dev/null)" 2>/dev/null || true)"
+    lade_image
+    compose up -d --remove-orphans
+    warte_gesund
+    neu="$(docker inspect -f '{{.Image}}' "$(compose ps -q darts)" 2>/dev/null || true)"
+    if [ -n "$alt" ] && [ "$alt" = "$neu" ]; then ok 'Schon die neueste Version'; else ok 'Aktualisiert'; docker image prune -f >/dev/null 2>&1 || true; fi
+    [ -n "$DOMAIN" ] && pruefe_https
+    exit 0 ;;
+  autoupdate)
+    autoupdate "${2:-}"
+    exit 0 ;;
   -h|--help|hilfe)
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
     exit 0 ;;
 esac
 
 pruefe_dateien
 pruefe_docker
 richte_env_ein "${1:-}"
+pruefe_image
 pruefe_dns
 pruefe_ports
 starte
@@ -217,7 +297,11 @@ if pruefe_https; then
     qrencode -t ANSIUTF8 -m 2 "https://$DOMAIN/app" | sed 's/^/    /'
   fi
   echo
-  echo '  Update später: neues ZIP daneben entpacken und dort wieder "bash install.sh" starten.'
+  if [ "$MODUS" = zip ]; then
+    echo '  Update später: neues ZIP daneben entpacken und dort wieder "bash install.sh" starten.'
+  else
+    echo '  Update später: "bash install.sh update" – oder automatisch: "bash install.sh autoupdate an".'
+  fi
 else
   printf '\n%sDarts läuft, aber HTTPS ist noch nicht erreichbar – siehe Hinweise oben.%s\n' "$GELB" "$AUS"
   echo '  Wenn DNS/Ports korrigiert sind: bash install.sh status'

@@ -1,0 +1,11 @@
+# Skripte für Linux immer mit LF auschecken (Docker/CI/Server)
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+.env.example text eol=lf
+*.py text eol=lf
+# Windows-Skripte mit CRLF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf

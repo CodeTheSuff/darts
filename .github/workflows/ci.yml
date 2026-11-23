@@ -1,0 +1,66 @@
+# Prüft jeden Push: Server- und Protokoll-Tests, E2E gegen den echten Server, Probe-Build des Images.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server + Protokoll + E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.14.0
+      - name: Protokoll-Tests
+        working-directory: packages/darts_protocol
+        run: dart pub get && dart test
+      - name: Server analysieren + testen
+        working-directory: server
+        run: dart pub get && dart analyze && dart test
+      - name: E2E (Host + 2 Gäste gegen den echten Server)
+        working-directory: tool/e2e
+        run: dart pub get && dart test -r expanded
+
+  image:
+    name: Docker-Image (Probe-Build, ohne Veröffentlichen)
+    runs-on: ubuntu-latest
+    needs: server
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build-Kontext ohne APK vorbereiten
+        run: |
+          mkdir -p ci/apk
+          python3 tool/ci/version_json.py > ci/version.json
+      - uses: docker/setup-buildx-action@v3
+      - name: Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          tags: darts:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container startet und antwortet
+        run: |
+          docker run -d --name darts -p 8080:8080 darts:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/health
+          curl -fsS http://127.0.0.1:8080/ | grep -q flutter_bootstrap
+          curl -fsS http://127.0.0.1:8080/app | grep -q 'intent://connect'
+          curl -fsS http://127.0.0.1:8080/version.json
+          test "$(docker exec darts id -u)" = 10001
+          docker logs darts

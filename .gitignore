@@ -49,3 +49,6 @@ app.*.map.json
 .claude/
 APK/
 /release/
+
+# CI-Build-Kontext (APK + version.json, nur lokal/CI)
+/ci/

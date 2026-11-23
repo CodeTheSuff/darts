@@ -1,0 +1,33 @@
+# Build-Kontext für docker/Dockerfile (GitHub Actions → ghcr.io).
+# Nur was Web-App und Server brauchen; ci/ (APK + version.json von der CI) bleibt drin.
+.git
+.github
+.dart_tool
+**/.dart_tool
+build
+**/build
+APK
+release
+BilderLayout
+docs
+test
+screens_test
+android
+ios
+macos
+windows
+linux
+tool/e2e
+deploy
+darts_logo_paket
+*.log
+*.iml
+.idea
+.vscode
+.claude
+# Geheimes – darf nie ins Image
+**/key.properties
+**/local.properties
+**/*.jks
+**/*.keystore
+**/.env
