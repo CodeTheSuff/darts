@@ -30,7 +30,7 @@ void main() {
     await Store.init();
   });
 
-  test('Fremde Darts: ungültige Werte, Bot-Zug und gesperrte Eingabe werden ignoriert', () {
+  test('Fremde Darts: ungültige Werte, Bot-Zug und gesperrte Eingabe wird nachgetragen', () {
     expect(MatchController.isValidDart(const Dart(99, 3)), isFalse);
     expect(MatchController.isValidDart(const Dart(25, 3)), isFalse);
     expect(MatchController.isValidDart(const Dart(0, 2)), isFalse);
@@ -39,11 +39,13 @@ void main() {
     final c = _vsBot();
     c.throwDartExternal(const Dart(99, 3));
     expect(c.darts, isEmpty);
+    // Gesperrt (Animation): nicht verwerfen, sondern nach dem Entsperren eintragen.
     c.inputLocked = true;
     c.throwDartExternal(const Dart(20, 1));
     expect(c.darts, isEmpty);
     c.inputLocked = false;
-    for (var i = 0; i < 3; i++) {
+    expect(c.darts.length, 1);
+    for (var i = 0; i < 2; i++) {
       c.throwDartExternal(const Dart(20, 1));
     }
     expect(c.botTurn, isTrue);

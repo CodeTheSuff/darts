@@ -143,9 +143,20 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
           ..n = n
           ..name = name;
         next[n] = cur;
+        final before = cur.ctl.resynced;
         try {
           cur.ctl.applyRemote([for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))]);
         } catch (_) {}
+        // Zurückgenommen (z. B. „Letzten Wurf zurück“ nach dem Spielende): Statistik schließen,
+        // ausstehenden Jubel verwerfen – das Spiel läuft weiter.
+        if (cur.ctl.resynced != before) {
+          final e = cur.ctl.engine;
+          if (!e.finished) cur.matchStats = false;
+          final leg = cur.leg;
+          if (leg != null && _report(cur.ctl)?.lastFinishedLeg?.number != leg.number) cur.leg = null;
+          _queue.removeWhere((s) => s.board == cur);
+          if (_show?.board == cur) _show = null;
+        }
       } else {
         MatchController? c;
         try {

@@ -656,6 +656,18 @@ class Store {
   static set guestMatch(Map<String, dynamic>? v) =>
       v == null ? _p.remove('guestMatch') : _p.setString('guestMatch', jsonEncode(v));
 
+  /// Host: zuletzt bewusst beendete bzw. verlassene gekoppelte Spiele (Match-IDs).
+  /// Übersteht einen Neustart, damit ein Gast ein altes Spiel nicht wieder öffnen lässt.
+  static List<String> get endedMatches {
+    try {
+      return [for (final x in jsonDecode(_p.getString('endedMatches') ?? '[]') as List) '$x'];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static set endedMatches(List<String> v) => _p.setString('endedMatches', jsonEncode(v));
+
   // ---------------- Turniere ----------------
   static List<Map<String, dynamic>> get tournaments {
     final raw = _p.getString('tournaments');

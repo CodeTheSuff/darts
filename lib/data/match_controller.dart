@@ -55,8 +55,13 @@ class MatchController extends ChangeNotifier {
 
   /// Gast: eigene Eingabe – unbestätigt, bis der Host denselben Stand zurückschickt.
   void _markOffline() {
-    if (remote) offlineDirty = true;
+    if (!remote) return;
+    offlineDirty = true;
+    onGuestInput?.call(this);
   }
+
+  /// Gast hat eingetragen (z. B. für die Prüfung, ob der Host den Stand bestätigt).
+  static void Function(MatchController m)? onGuestInput;
 
   final _ext = StreamController<ThrowEvent>.broadcast();
 
@@ -119,15 +124,55 @@ class MatchController extends ChangeNotifier {
 
   /// Host: Wurf eines gekoppelten Geräts.
   void throwDartExternal(Dart d) {
-    if ((engine.finished && !d.isControl) || inputLocked || !isValidDart(d)) return;
-    // Ist gerade ein Bot dran, gehört der Wurf nicht zu ihm (veralteter Stand beim Gast).
-    if (botTurn && !d.isControl) return;
+    if (!isValidDart(d)) return;
+    if (inputLocked) {
+      // Während einer Animation nicht verwerfen, sondern danach eintragen –
+      // sonst hätte das andere Gerät einen Wurf, den der Host nie bekommt.
+      _lockedQueue.add(d);
+      return;
+    }
+    if ((engine.finished && !d.isControl) || (botTurn && !d.isControl)) {
+      // Passt nicht (veralteter Stand beim Gast): ihm den richtigen Stand schicken.
+      notifyListeners();
+      return;
+    }
     final ev = throwDart(d);
     _ext.add(ev);
   }
 
+  /// Host: Rücknahme von einem gekoppelten Gerät (während Animationen vorgemerkt).
+  void undoExternal() {
+    if (inputLocked) {
+      _lockedQueue.add(null);
+      return;
+    }
+    undo();
+  }
+
+  /// Host: während der Sperre eingegangene Würfe (null = Rücknahme), in Reihenfolge.
+  final List<Dart?> _lockedQueue = [];
+
   /// Host: Eingaben von außen gerade gesperrt (z. B. während einer Jubel-Animation).
-  bool inputLocked = false;
+  /// Was in der Zeit ankommt, wird beim Entsperren nachgetragen.
+  bool get inputLocked => _inputLocked;
+  bool _inputLocked = false;
+  set inputLocked(bool v) {
+    _inputLocked = v;
+    if (!v) _flushLocked();
+  }
+
+  /// Vorgemerkte Eingaben einzeln nachtragen – zwischen zweien darf der Spielbildschirm
+  /// wieder sperren (z. B. für den nächsten Jubel).
+  void _flushLocked() {
+    if (_inputLocked || _lockedQueue.isEmpty) return;
+    final d = _lockedQueue.removeAt(0);
+    if (d == null) {
+      undo();
+    } else {
+      throwDartExternal(d);
+    }
+    if (_lockedQueue.isNotEmpty) Timer(const Duration(milliseconds: 120), _flushLocked);
+  }
 
   /// Nur echte Felder bzw. bekannte Markierungen zulassen.
   static bool isValidDart(Dart d) {
@@ -152,6 +197,8 @@ class MatchController extends ChangeNotifier {
       }
       return;
     }
+    // Host übernimmt einen ganzen Stand (Nachsync): vorgemerkte Einzelwürfe sind darin enthalten.
+    _lockedQueue.clear();
     if (other.length > local.length && _same(local, other, local.length)) {
       for (final d in remoteDarts.sublist(local.length)) {
         darts.add(d);

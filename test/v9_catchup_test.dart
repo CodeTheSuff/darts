@@ -82,6 +82,27 @@ void main() {
       expect((Store.activeMatch!['darts'] as List).length, 4);
     });
 
+    test('Würfe während einer Host-Animation gehen nicht verloren (Gerätetest 3.2.0)', () async {
+      host.throwDart(const Dart(20, 3));
+      host.inputLocked = true; // z. B. 180-Jubel läuft
+      for (final d in const [Dart(19, 3), Dart(19, 1), Dart(19, 3)]) {
+        guest.sendToHost({'t': 'dart', 'mid': host.matchId, 'd': d.toJson()});
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(host.darts.length, 1);
+      host.inputLocked = false;
+      await waitFor(() => host.darts.length == 4);
+      expect(host.darts.map((d) => d.code).skip(1), const [Dart(19, 3), Dart(19, 1), Dart(19, 3)].map((d) => d.code));
+    });
+
+    test('Host schließt den WLAN-Raum → Gast hört auf, neu zu verbinden', () async {
+      await waitFor(() => Link.I.peerCount == 1);
+      await Link.I.leave();
+      await waitFor(() => guest.status.contains('geschlossen'));
+      expect(guest.status, contains('geschlossen'));
+      expect(guest.isConnected, isFalse);
+    });
+
     test('Host ist weiter als der Gast → bleibt, Gast holt auf', () async {
       for (final d in const [Dart(20, 3), Dart(20, 1), Dart(1, 1)]) {
         host.throwDart(d);

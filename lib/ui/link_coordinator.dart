@@ -150,6 +150,7 @@ class LinkCoordinator {
   static void init() {
     if (_init) return;
     _init = true;
+    _endedMatches.addAll(Store.endedMatches);
     final l = Link.I;
     l.hostState = _hostState;
     l.onHostMessage = _onHostMessage;
@@ -161,6 +162,7 @@ class LinkCoordinator {
     l.onUpdateRequired = (info) => unawaited(UpdateUi.showRequired(info));
     l.onVersionMismatch = (why) => unawaited(_versionMismatch(why));
     MatchController.onMatchCommitted = (_) => _scheduleSync();
+    MatchController.onGuestInput = _watchGuestInput;
     TournamentStore.changes.addListener(_scheduleSync);
     var wasConnected = false;
     var peers = 0;
@@ -432,6 +434,12 @@ class LinkCoordinator {
     if (nav == null) return;
     if (_openLocal?.matchId == m.matchId || hostMatch?.matchId == m.matchId || _openingMid == m.matchId) return;
     _openingMid = m.matchId;
+    // Turnierspiel: das Turnier darunter öffnen, damit „Zum Turnier“ dorthin zurückführt
+    // (und die Anzeigen nach dem Spiel wieder das Turnier bekommen).
+    final tid = m.tournamentId;
+    if (m.isTournament && tid != null && TournamentStore.byId(tid) != null) {
+      unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => TournamentScreen(id: tid))));
+    }
     unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => GameScreen(controller: m))));
   }
 
@@ -442,7 +450,7 @@ class LinkCoordinator {
     }
     _openLocal = c;
     if (_openingMid == c.matchId) _openingMid = null;
-    _endedMatches.remove(c.matchId);
+    if (_endedMatches.remove(c.matchId)) Store.endedMatches = _endedMatches;
     if (!Link.I.isHost) return;
     if (hostMatch != null && hostMatch != c) hostMatch!.removeListener(Link.I.broadcastState);
     hostMatch = c;
@@ -474,6 +482,7 @@ class LinkCoordinator {
         ..remove(c.matchId)
         ..add(c.matchId);
       if (_endedMatches.length > 20) _endedMatches.removeAt(0);
+      Store.endedMatches = _endedMatches;
       Link.I.broadcastState();
     }
   }
@@ -512,8 +521,8 @@ class LinkCoordinator {
         m.throwDartExternal(Dart.fromJson(Map<String, dynamic>.from(msg['d'] as Map)));
       case 'undo':
         final m = hostMatch;
-        if (m == null || m.matchId != msg['mid'] || m.inputLocked) return;
-        m.undo();
+        if (m == null || m.matchId != msg['mid']) return;
+        m.undoExternal();
       case 'start':
         final c = MatchController.fromJson(Map<String, dynamic>.from(msg['match'] as Map));
         if (c == null || hostMatch?.matchId == c.matchId) return;
@@ -692,6 +701,29 @@ class LinkCoordinator {
     return true;
   }
 
+  /// Gast: Ist der Host-Stand ein echter Anfang des eigenen (hier sind mehr Würfe)?
+  static bool _hostBehind(MatchController c, List<Dart> host) {
+    final mine = c.darts;
+    if (host.length >= mine.length) return false;
+    for (var i = 0; i < host.length; i++) {
+      if (mine[i].code != host[i].code) return false;
+    }
+    return true;
+  }
+
+  /// Gast: Eigene Eingaben, die der Host nach kurzer Zeit nicht bestätigt hat, als Stand
+  /// nachschicken – falls eine Nachricht verloren ging, ohne dass die Verbindung abbrach.
+  static Timer? _confirmTimer;
+  static void _watchGuestInput(MatchController c) {
+    _confirmTimer?.cancel();
+    _confirmTimer = Timer(const Duration(seconds: 5), () {
+      if (clientMatch != c || !c.offlineDirty || c.awaitingCatchup) return;
+      if (!Link.I.isConnected || Link.I.hostCompat < linkCatchupCompat) return;
+      ErrorLog.crumb('Nachsync: Host hat eigene Würfe nicht bestätigt – Stand wird geschickt');
+      _sendCatchup(c);
+    });
+  }
+
   /// Gast: Muss der eigene Stand an den Host (statt einfach dessen Stand zu übernehmen)?
   /// Ja, wenn hier mehr eingetragen ist als beim Host oder offline anders weitergezählt wurde.
   static bool _needsCatchup(MatchController c, List<Dart> host) {
@@ -783,6 +815,8 @@ class LinkCoordinator {
       // laufendes Mitspiel-Match schließen, Punktetafel zeigen
       final r = _clientRoute;
       if (r != null && r.isActive) navigatorKey.currentState?.removeRoute(r);
+      final cm = clientMatch;
+      if (cm != null && Store.guestMatch?['mid'] == cm.matchId) Store.guestMatch = null;
       clientMatch = null;
       _clientRoute = null;
       viewerState.value = st;
@@ -853,6 +887,12 @@ class LinkCoordinator {
           _sendCatchup(cur);
           return;
         }
+        // Host hängt hinter eigenen, unbestätigten Würfen zurück (z. B. Nachricht unterwegs
+        // verloren): eigenen Stand schicken statt ihn zu verwerfen.
+        if (cur.offlineDirty && _hostBehind(cur, remoteDarts) && Link.I.hostCompat >= linkCatchupCompat) {
+          _sendCatchup(cur);
+          return;
+        }
         cur
           ..awaitingCatchup = false
           ..offlineDirty = false;
@@ -887,6 +927,8 @@ class LinkCoordinator {
       nav?.removeRoute(_clientRoute!);
       clientMatch = null;
       _clientRoute = null;
+      // Vom Host beendet: gespeicherte Kopie löschen (sonst käme es nach einem Neustart wieder).
+      if (Store.guestMatch?['mid'] == cur.matchId) Store.guestMatch = null;
     }
 
     final rt = remoteTournament;

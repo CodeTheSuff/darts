@@ -879,6 +879,18 @@ class Link extends ChangeNotifier {
       }
     }
     switch (msg['t']) {
+      case 'closed' when !isOnline:
+        // Host hat den WLAN-Raum geschlossen: nicht neu verbinden, Kopplung vergessen.
+        _forget();
+        _wantConnected = false;
+        _retry?.cancel();
+        _endRetrySearch();
+        status = 'Der Host hat den Raum geschlossen.';
+        ErrorLog.crumb('Kopplung: Raum vom Host geschlossen');
+        _ws?.close();
+        _giveUp();
+        notifyListeners();
+        return;
       case 'auth':
         // Host muss beweisen, dass er der bekannte ist – sonst sofort trennen.
         final key = Store.knownHosts.where((h) => h.device == _expectHost).firstOrNull?.key;
@@ -1227,6 +1239,13 @@ class Link extends ChangeNotifier {
   /// [closeRoom]: Online-Host schließt den Raum auf dem Server (Close-Code 4000) –
   /// sonst gilt das Beenden dort nur als „Host offline“ und die Gäste warten.
   Future<void> stop({bool closeRoom = false}) async {
+    // Raum bewusst geschlossen: den Gästen Bescheid sagen (sonst versuchen sie es im WLAN endlos neu).
+    // Online erledigt das der Server (Close-Code 4000).
+    if (closeRoom && role == LinkRole.host && !isOnline) {
+      for (final p in List.of(_peers)) {
+        _send(p.ws, {'t': 'closed'});
+      }
+    }
     _wantConnected = false;
     _endRetrySearch();
     // Gemerkte Kopplung bleibt bestehen (Absturz/Beenden) – nur [leave] löscht sie.
