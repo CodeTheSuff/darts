@@ -22,6 +22,7 @@ import 'dartboard.dart';
 import 'hit_boards.dart';
 import 'match_share.dart';
 import 'keypad.dart';
+import 'link_badge.dart';
 import 'link_coordinator.dart';
 import 'stats_table.dart';
 import 'theme.dart';
@@ -693,36 +694,8 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
           ),
-          if (Link.I.role != LinkRole.none)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Tooltip(
-                message: Link.I.isConnected ? 'Gekoppelt · ${Link.I.peerCount + 1} Geräte' : Link.I.status,
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: (Link.I.isConnected ? C.dbl : C.danger).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Link.I.isConnected ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
-                        size: 16,
-                        color: Link.I.isConnected ? C.dbl : C.danger,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${Link.I.isConnected ? Link.I.peerCount + 1 : '!'}',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Link.I.isConnected ? C.dbl : C.danger),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          // Verbindungs-Symbol: antippen öffnet „Geräte verbinden“ (Raum eröffnen, Geräte freigeben).
+          const LinkBadge(),
           _iconBtn(
             Store.soundOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
             Store.soundOn ? 'Sound aus' : 'Sound an',
@@ -1360,16 +1333,28 @@ class _GameScreenState extends State<GameScreen> {
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 56,
-                  child: Key3(
-                    semantics: button,
-                    onTap: onButton,
-                    gradient: C.accentGradient,
-                    borderColor: Colors.transparent,
-                    radius: 16,
-                    child: Text(
-                      button,
-                      style: TextStyle(color: C.onAccent, fontWeight: FontWeight.w800, fontSize: 17),
-                    ),
+                  child: Row(
+                    children: [
+                      // Spiel vorbei, aber der letzte Wurf war falsch: zurück ins Spiel.
+                      if (e.finished && ctl.canUndo) ...[
+                        Expanded(child: _undoLastKey()),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        flex: 2,
+                        child: Key3(
+                          semantics: button,
+                          onTap: onButton,
+                          gradient: C.accentGradient,
+                          borderColor: Colors.transparent,
+                          radius: 16,
+                          child: Text(
+                            button,
+                            style: TextStyle(color: C.onAccent, fontWeight: FontWeight.w800, fontSize: 17),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1451,6 +1436,33 @@ class _GameScreenState extends State<GameScreen> {
       onButton: () => setState(() => _matchStatsOpen = false),
     );
   }
+
+  /// „Letzten Wurf zurück“ nach dem Spielende: nimmt den letzten Pfeil zurück, das Spiel geht weiter.
+  Widget _undoLastKey() => Key3(
+        semantics: 'Letzten Wurf zurücknehmen und weiterspielen',
+        onTap: () {
+          setState(() => _matchStatsOpen = false);
+          _undo();
+        },
+        enabled: ctl.canUndo,
+        color: C.surface2,
+        borderColor: C.line,
+        radius: 16,
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.undo_rounded, size: 20),
+                SizedBox(width: 6),
+                Text('Letzten Wurf\nzurück', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, height: 1.1)),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _resultPanel() {
     final res = e.results();
@@ -1561,15 +1573,7 @@ class _GameScreenState extends State<GameScreen> {
                         Expanded(
                           child: SizedBox(
                             height: 52,
-                            child: Key3(
-                              semantics: 'Letzten Pfeil rückgängig machen',
-                              onTap: _undo,
-                              enabled: ctl.canUndo,
-                              color: C.surface2,
-                              borderColor: C.line,
-                              radius: 16,
-                              child: const Text('Undo', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                            ),
+                            child: _undoLastKey(),
                           ),
                         ),
                         const SizedBox(width: 8),

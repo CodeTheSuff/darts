@@ -147,7 +147,7 @@ Future<bool> _confirmServer(String server) async {
     builder: (c) => AlertDialog(
       title: const Text('Mit Server verbinden?'),
       content: Text('Online-Spiele und Updates laufen dann über\n\n$server\n\n'
-          'Das kannst du jederzeit unter Koppeln → Online → Erweitert ändern.'),
+          'Das kannst du jederzeit unter Einstellungen → Daten → Server ändern.'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Abbrechen')),
         FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Verbinden')),

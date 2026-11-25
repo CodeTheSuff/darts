@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show mapEquals;
+import 'package:flutter/foundation.dart' show mapEquals, visibleForTesting;
 import 'package:material_ui/material_ui.dart';
 
 import '../data/error_log.dart';
@@ -14,6 +14,7 @@ import '../net/link.dart';
 import 'game_screen.dart';
 import 'scoreboard_screen.dart';
 import 'share_screens.dart';
+import 'theme.dart';
 import 'tournament_screens.dart';
 import 'update_dialog.dart';
 
@@ -82,12 +83,12 @@ class LinkCoordinator {
       }
       final active = Store.activeMatch;
       final m = active == null ? null : MatchController.fromJson(active);
-      final nav = navigatorKey.currentState;
-      if (m != null && !m.engine.finished && nav != null) {
-        unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => GameScreen(controller: m))));
-      }
+      if (m != null && !m.engine.finished) _openHostGame(m);
       return;
     }
+    // Gast: zuletzt laufendes Spiel gleich wieder öffnen – auch ohne Verbindung kann weiter
+    // eingetragen werden, der Abgleich mit dem Host folgt beim Wiederverbinden.
+    if (s['viewer'] != true) _reopenGuestMatch();
     final address = s['address'] as String?;
     final code = s['code'] as String? ?? '';
     final device = s['device'] as String?;
@@ -138,7 +139,7 @@ class LinkCoordinator {
         title: const Text('App-Versionen passen nicht'),
         content: Text(why == VersionMismatch.selfTooOld
             ? 'Das Raum-Gerät hat eine neuere Darts-Version als dieses Gerät. Bitte aktualisiere die App hier '
-                '(Koppeln → Online → Erweitert → „Nach Updates suchen“) und tritt danach wieder bei.'
+                '(Einstellungen → „Nach Updates suchen“) und tritt danach wieder bei.'
             : 'Das Raum-Gerät hat eine ältere Darts-Version als dieses Gerät. Bitte aktualisiere die App dort '
                 'und öffne den Raum danach neu.'),
         actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
@@ -168,6 +169,9 @@ class LinkCoordinator {
         remoteTournament = null;
       }
       if (!l.isConnected) _syncedThisConnection = false;
+      // Raum erst während eines Spiels eröffnet (Verbindungs-Symbol im Spiel): Spiel anbieten.
+      final open = _openLocal;
+      if (l.isHost && hostMatch == null && open != null) gameOpened(open);
       // Host: neuer Gast verbunden → abgleichen
       if (l.isHost && l.peerCount > peers) _scheduleSync();
       peers = l.peerCount;
@@ -204,6 +208,8 @@ class LinkCoordinator {
       'boards': boards,
       'boardOf': {Store.deviceId: hostBoard, ..._boardOfDevice},
       'claims': claims,
+      // Hier bewusst verlassene Spiele: Gäste schließen sie, statt sie zu behalten.
+      if (_endedMatches.isNotEmpty) 'ended': _endedMatches,
     };
   }
 
@@ -304,6 +310,13 @@ class LinkCoordinator {
     final mj = msg['match'];
     if (msg['closed'] == true) {
       // Gast hat das Spiel verlassen: fertig → entfernen, sonst als unterbrochen gesperrt lassen.
+      if (mj is Map) {
+        final c = MatchController.fromJson(Map<String, dynamic>.from(mj));
+        if (c != null && c.engine.finished && c.isTournament) {
+          TournamentStore.onMatchDone(c);
+          _boardMatches[n]?['done'] = true;
+        }
+      }
       final cur = _boardMatches[n];
       if (cur != null) {
         if (cur['done'] == true || tmid == null) {
@@ -331,8 +344,9 @@ class LinkCoordinator {
     final c = MatchController.fromJson(j);
     if (c != null && c.engine.finished) {
       done = true;
-      // Ergebnis ins Turnier übernehmen (wird ignoriert, wenn schon eingetragen)
-      if (c.isTournament) TournamentStore.onMatchDone(c);
+      // Ergebnis ins Turnier übernehmen (wird ignoriert, wenn schon eingetragen). Ältere Geräte
+      // schicken kein „final“ – dann wie bisher sofort; sonst erst, wenn der Gast das Ergebnis verlässt.
+      if (c.isTournament && msg['final'] != false) TournamentStore.onMatchDone(c);
     }
     _boardMatches[n] = {'match': j, 'tmid': tmid, 'dev': dev, 'done': done};
     _boardsChanged();
@@ -353,6 +367,8 @@ class LinkCoordinator {
       'tid': c.tournamentId,
       'tmid': c.tournamentMatchId,
       'match': c.toJson(),
+      // Erst beim Verlassen des Ergebnisses gilt es – bis dahin kann noch zurückgenommen werden.
+      'final': c.committed || closed,
       if (closed) 'closed': true,
     });
   }
@@ -390,25 +406,54 @@ class LinkCoordinator {
                 : 'Dieses Spiel ist schon eingetragen.');
       case 'boardNoTaken':
         _report('Scheibe ${msg['n']} ist schon vergeben.');
+      case 'catchupDone':
+        _onCatchupDone(msg);
     }
   }
 
 
   // ---------------------------------------------------------------- Bildschirme melden sich
 
+  /// Auf diesem Gerät offenes eigenes Spiel (auch ohne Kopplung).
+  static MatchController? _openLocal;
+
+  /// Host: zuletzt hier verlassene Spiele (Match-IDs) – Gäste schließen sie dann ebenfalls.
+  static final List<String> _endedMatches = [];
+
+  /// Host: Spiel wird gerade (wieder) geöffnet – nicht doppelt öffnen.
+  static String? _openingMid;
+
+  /// Host: Abgleich-Anfragen, die auf das Öffnen ihres Spiels warten.
+  static final Map<String, Map<String, dynamic>> _pendingCatchup = {};
+
+  /// Host: eigenes Spiel öffnen (nach Neustart oder auf Wunsch eines Gasts), höchstens einmal.
+  static void _openHostGame(MatchController m) {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    if (_openLocal?.matchId == m.matchId || hostMatch?.matchId == m.matchId || _openingMid == m.matchId) return;
+    _openingMid = m.matchId;
+    unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => GameScreen(controller: m))));
+  }
+
   static void gameOpened(MatchController c) {
     if (c.remote) {
       clientMatch = c;
       return;
     }
+    _openLocal = c;
+    if (_openingMid == c.matchId) _openingMid = null;
+    _endedMatches.remove(c.matchId);
     if (!Link.I.isHost) return;
     if (hostMatch != null && hostMatch != c) hostMatch!.removeListener(Link.I.broadcastState);
     hostMatch = c;
     c.addListener(Link.I.broadcastState);
     Link.I.broadcastState();
+    final pending = _pendingCatchup.remove(c.matchId);
+    if (pending != null) scheduleMicrotask(() => _onCatchup(pending));
   }
 
   static void gameClosed(MatchController c) {
+    if (_openLocal == c) _openLocal = null;
     if (boardMatch == c) {
       _sendBoard(closed: true);
       c.removeListener(_sendBoard);
@@ -419,16 +464,22 @@ class LinkCoordinator {
     if (clientMatch == c) {
       clientMatch = null;
       _clientRoute = null;
+      // Bewusst verlassen (oder vom Host beendet): nicht mehr wiederherstellen.
+      if (Store.guestMatch?['mid'] == c.matchId) Store.guestMatch = null;
     }
     if (hostMatch == c) {
       c.removeListener(Link.I.broadcastState);
       hostMatch = null;
+      _endedMatches
+        ..remove(c.matchId)
+        ..add(c.matchId);
+      if (_endedMatches.length > 20) _endedMatches.removeAt(0);
       Link.I.broadcastState();
     }
   }
 
   static void tournamentOpened(String id) {
-    if (!Link.I.isHost) return;
+    // Auch ohne Kopplung merken: Wird der Raum erst danach eröffnet, sehen die Gäste das Turnier.
     hostTournamentId = id;
     Link.I.broadcastState();
   }
@@ -467,6 +518,253 @@ class LinkCoordinator {
         final c = MatchController.fromJson(Map<String, dynamic>.from(msg['match'] as Map));
         if (c == null || hostMatch?.matchId == c.matchId) return;
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => GameScreen(controller: c)));
+      case 'catchup':
+        _onCatchup(msg);
+    }
+  }
+
+  // ---------------------------------------------------------------- Nachsync (Host)
+
+  /// Ein Gast meldet nach dem Wiederverbinden seinen Stand eines Spiels:
+  /// - Host-Stand ist Anfang des Gast-Stands → Würfe des Gasts übernehmen.
+  /// - Gast-Stand ist Anfang des Host-Stands oder gleich → nichts zu tun (Gast holt auf).
+  /// - Beide haben unterschiedlich weitergezählt → am Host fragen, welcher Stand bleibt.
+  /// Hat der Host das Spiel gerade nicht offen (z. B. nach Neustart), öffnet er es wieder:
+  /// den eigenen gespeicherten Stand, sonst den des Gasts.
+  static Future<void> _onCatchup(Map<String, dynamic> msg) async {
+    final mid = msg['mid'] as String?;
+    final dev = msg['_dev'] as String? ?? '';
+    final from = msg['_name'] as String? ?? 'Anderes Gerät';
+    if (mid == null || msg['darts'] is! List) return;
+    void done({bool gone = false}) {
+      Link.I.sendToDevice(dev, {'t': 'direct', 'kind': 'catchupDone', 'mid': mid, if (gone) 'gone': true});
+      Link.I.broadcastState();
+    }
+
+    final List<Dart> theirs;
+    try {
+      theirs = [for (final d in msg['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))];
+    } catch (_) {
+      return;
+    }
+    if (theirs.any((d) => !MatchController.isValidDart(d))) return;
+    final m = hostMatch;
+    if (m == null || m.matchId != mid) {
+      if (m != null || _endedMatches.contains(mid)) {
+        // Hier läuft schon ein anderes Spiel bzw. es wurde bewusst beendet.
+        done(gone: true);
+        return;
+      }
+      // Spiel wieder öffnen; der Abgleich läuft, sobald es offen ist.
+      final active = Store.activeMatch;
+      MatchController? c;
+      if (active != null && active['mid'] == mid) c = MatchController.fromJson(active);
+      final mj = msg['match'];
+      if (c == null && mj is Map) c = MatchController.fromJson(Map<String, dynamic>.from(mj));
+      if (c == null) {
+        done(gone: true);
+        return;
+      }
+      _pendingCatchup[mid] = msg;
+      ErrorLog.crumb('Nachsync: Spiel wird für $from wieder geöffnet');
+      _openHostGame(c);
+      return;
+    }
+    if (m.committed) {
+      done();
+      return;
+    }
+    final mine = m.darts;
+    bool prefix(List<Dart> a, List<Dart> b) {
+      if (a.length > b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (a[i].code != b[i].code) return false;
+      }
+      return true;
+    }
+
+    if (prefix(theirs, mine)) {
+      done();
+      return;
+    }
+    if (prefix(mine, theirs)) {
+      ErrorLog.crumb('Nachsync: ${theirs.length - mine.length} Würfe von $from übernommen');
+      m.applyRemote(theirs);
+      _report('${theirs.length - mine.length} Würfe von $from nachgetragen');
+      done();
+      return;
+    }
+    if (msg['dirty'] != true) {
+      done();
+      return;
+    }
+    // Beide haben unterschiedlich weitergezählt.
+    if (_conflictOpen.contains(mid)) {
+      _conflictLatest[mid] = msg;
+      return;
+    }
+    _conflictOpen.add(mid);
+    _conflictLatest[mid] = msg;
+    final keepTheirs = await _askConflict(m, theirs, from);
+    _conflictOpen.remove(mid);
+    final latest = _conflictLatest.remove(mid) ?? msg;
+    if (keepTheirs == true && hostMatch == m && !m.committed) {
+      final List<Dart> chosen = [
+        for (final d in latest['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map)),
+      ];
+      ErrorLog.crumb('Nachsync: Stand von $from übernommen');
+      m.applyRemote(chosen);
+    } else {
+      ErrorLog.crumb('Nachsync: eigener Stand behalten');
+    }
+    done();
+  }
+
+  static final Set<String> _conflictOpen = {};
+  static final Map<String, Map<String, dynamic>> _conflictLatest = {};
+
+  /// Test: Antwort auf die Konflikt-Frage vorgeben (true = Stand des Gasts).
+  @visibleForTesting
+  static Future<bool?> Function(MatchController mine, MatchController theirs, String from)? conflictForTest;
+
+  /// Kurzstand je Spieler, z. B. „Simon 121 · Anna 87“.
+  static String _summary(MatchController c) {
+    final e = c.engine;
+    return [for (var i = 0; i < e.n; i++) '${e.players[i].name} ${e.mainValue(i)}'].join(' · ');
+  }
+
+  static Future<bool?> _askConflict(MatchController m, List<Dart> theirs, String from) async {
+    final other = MatchController.fromJson({...m.toJson(), 'darts': [for (final d in theirs) d.toJson()]});
+    if (other == null) return false;
+    final t = conflictForTest;
+    if (t != null) return t(m, other, from);
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return false;
+    Widget box(String title, MatchController c, int darts) => Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: C.surface2, borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(_summary(c)),
+              Text('$darts Würfe eingetragen', style: TextStyle(color: C.muted, fontSize: 12)),
+            ],
+          ),
+        );
+    return showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        icon: const Icon(Icons.sync_problem_rounded, size: 36),
+        title: const Text('Zwei verschiedene Spielstände'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Während die Verbindung weg war, wurde hier und auf „$from“ unterschiedlich '
+                  'weitergezählt. Welcher Stand soll gelten? Alle Geräte bekommen danach diesen Stand.'),
+              box('Dieses Gerät (${Store.deviceName})', m, m.darts.length),
+              box(from, other, theirs.length),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Diesen behalten')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text('Stand von $from')),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- Nachsync (Gast)
+
+  /// Gast: Enthält der Host-Stand alle eigenen Würfe (gleich oder weiter)?
+  static bool _hostHasAll(MatchController c, List<Dart> host) {
+    final mine = c.darts;
+    if (mine.length > host.length) return false;
+    for (var i = 0; i < mine.length; i++) {
+      if (mine[i].code != host[i].code) return false;
+    }
+    return true;
+  }
+
+  /// Gast: Muss der eigene Stand an den Host (statt einfach dessen Stand zu übernehmen)?
+  /// Ja, wenn hier mehr eingetragen ist als beim Host oder offline anders weitergezählt wurde.
+  static bool _needsCatchup(MatchController c, List<Dart> host) {
+    if (Link.I.hostCompat < linkCatchupCompat) return false;
+    final mine = c.darts;
+    var same = 0;
+    while (same < mine.length && same < host.length && mine[same].code == host[same].code) {
+      same++;
+    }
+    if (same == mine.length) return false; // gleich oder Host weiter → übernehmen
+    // Hier mehr oder anders eingetragen: nur, wenn es eigene, unbestätigte Eingaben sind
+    // (sonst hat der Host z. B. etwas zurückgenommen, und sein Stand gilt).
+    return c.offlineDirty;
+  }
+
+  /// Gast: Verbindung, für die der Abgleich schon lief.
+  static int _catchupEpoch = -1;
+
+  /// Gast: gespeichertes Spiel nach Neustart wieder öffnen (offline weiterzählen möglich).
+  static void _reopenGuestMatch() {
+    final g = Store.guestMatch;
+    final nav = navigatorKey.currentState;
+    if (g == null || nav == null || clientMatch != null || boardMatch != null) return;
+    final c = MatchController.fromJson(g);
+    if (c == null || c.engine.finished) {
+      Store.guestMatch = null;
+      return;
+    }
+    c
+      ..remote = true
+      ..offlineDirty = g['dirty'] == true;
+    ErrorLog.crumb('Gekoppeltes Spiel wiederhergestellt (${c.darts.length} Würfe)');
+    final route = MaterialPageRoute<void>(builder: (_) => GameScreen(controller: c));
+    _clientRoute = route;
+    clientMatch = c;
+    unawaited(nav.push(route));
+  }
+
+  /// Gast: eigenen Stand an den Host schicken (er entscheidet, was gilt).
+  static void _sendCatchup(MatchController c) {
+    c.awaitingCatchup = true;
+    Link.I.sendToHost({
+      't': 'catchup',
+      'mid': c.matchId,
+      'darts': [for (final d in c.darts) d.toJson()],
+      'dirty': c.offlineDirty,
+      'match': c.toJson(),
+    });
+    // Ohne Antwort (Verbindung wieder weg) wird bei der nächsten Verbindung erneut gefragt.
+  }
+
+  /// Gast: Antwort des Hosts auf den Abgleich.
+  static void _onCatchupDone(Map<String, dynamic> msg) {
+    final c = clientMatch;
+    if (c == null || c.matchId != msg['mid']) return;
+    c
+      ..awaitingCatchup = false
+      ..offlineDirty = false;
+    final st = _lastState;
+    if (msg['gone'] == true) {
+      // Host spielt etwas anderes bzw. hat das Spiel beendet → hier schließen.
+      final r = _clientRoute;
+      if (r != null && r.isActive) navigatorKey.currentState?.removeRoute(r);
+      clientMatch = null;
+      _clientRoute = null;
+      Store.guestMatch = null;
+      _report('Das Spiel wurde am anderen Gerät beendet.');
+      if (st != null) _onState(st);
+      return;
+    }
+    final mj = st?['match'];
+    if (mj is Map && mj['mid'] == c.matchId) {
+      c.applyRemote([for (final d in mj['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map))]);
     }
   }
 
@@ -507,9 +805,11 @@ class LinkCoordinator {
       _remoteClaims = newClaims;
       boardsTick.value++;
     }
-    // Nach Neuverbindung den Stand der eigenen Scheibe erneut melden.
+    // Nach Neuverbindung den Stand der eigenen Scheibe erneut melden (auch offline Eingetragenes).
+    final fresh = Link.I.connectionEpoch != _catchupEpoch;
+    _catchupEpoch = Link.I.connectionEpoch;
     final bm = boardMatch;
-    if (bm != null && !bm.engine.finished && newClaims[bm.tournamentMatchId] == null) _sendBoard();
+    if (bm != null && !bm.engine.finished && (fresh || newClaims[bm.tournamentMatchId] == null)) _sendBoard();
     if (viewer) {
       viewerState.value = state;
       _showBoard();
@@ -546,6 +846,16 @@ class LinkCoordinator {
         final remoteDarts = [
           for (final d in j['darts'] as List) Dart.fromJson(Map<String, dynamic>.from(d as Map)),
         ];
+        // Abgleich läuft: eigenen Stand behalten, bis der Host geantwortet hat – außer der Host
+        // hat unsere Würfe inzwischen schon (dann ist der Abgleich erledigt).
+        if (cur.awaitingCatchup && !fresh && !_hostHasAll(cur, remoteDarts)) return;
+        if (fresh && _needsCatchup(cur, remoteDarts)) {
+          _sendCatchup(cur);
+          return;
+        }
+        cur
+          ..awaitingCatchup = false
+          ..offlineDirty = false;
         cur.applyRemote(remoteDarts);
         return;
       }
@@ -564,7 +874,15 @@ class LinkCoordinator {
     }
 
     // Kein Match beim Host: laufendes Gast-Match schließen (fertige bleiben für das Ergebnis offen).
+    // Hat der Host das Spiel nicht bewusst beendet (z. B. nach Neustart noch nicht wieder offen),
+    // bleibt es hier offen, und der Host bekommt es zum Wiederöffnen angeboten.
     final cur = clientMatch;
+    final ended = state['ended'];
+    final hostEnded = ended is List && ended.contains(cur?.matchId);
+    if (cur != null && !cur.engine.finished && !hostEnded && Link.I.hostCompat >= linkCatchupCompat) {
+      if (fresh || !cur.awaitingCatchup) _sendCatchup(cur);
+      return;
+    }
     if (cur != null && !cur.engine.finished && _clientRoute != null && _clientRoute!.isActive) {
       nav?.removeRoute(_clientRoute!);
       clientMatch = null;

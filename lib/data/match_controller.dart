@@ -45,6 +45,19 @@ class MatchController extends ChangeNotifier {
   /// Gast in einem gekoppelten Spiel: Würfe gehen an den Host, der Stand kommt vom Host.
   bool remote = false;
 
+  /// Gast: Hier wurde eingetragen, und der Host hat diesen Stand noch nicht bestätigt
+  /// (sein letzter Stand war ein anderer). Bleibt nach einem Verbindungsabbruch stehen –
+  /// beim Wiederverbinden schickt der Gast dann seinen Stand, und der Host gleicht ab.
+  bool offlineDirty = false;
+
+  /// Gast: wartet auf die Antwort des Hosts zum Abgleich (bis dahin bleibt der eigene Stand).
+  bool awaitingCatchup = false;
+
+  /// Gast: eigene Eingabe – unbestätigt, bis der Host denselben Stand zurückschickt.
+  void _markOffline() {
+    if (remote) offlineDirty = true;
+  }
+
   final _ext = StreamController<ThrowEvent>.broadcast();
 
   /// Zählt komplette Neuaufbauten durch den Host (z. B. nach Undo auf einem anderen Gerät).
@@ -98,6 +111,7 @@ class MatchController extends ChangeNotifier {
     darts.add(d);
     final ev = engine.apply(d);
     if (remote) Link.I.sendToHost({'t': 'dart', 'mid': matchId, 'd': d.toJson()});
+    _markOffline();
     _persist();
     notifyListeners();
     return ev;
@@ -131,7 +145,13 @@ class MatchController extends ChangeNotifier {
     String enc(Dart d) => jsonEncode(d.toJson());
     final local = darts.map(enc).toList();
     final other = remoteDarts.map(enc).toList();
-    if (local.length == other.length && _same(local, other, local.length)) return;
+    if (local.length == other.length && _same(local, other, local.length)) {
+      if (remote && offlineDirty) {
+        offlineDirty = false;
+        _persist();
+      }
+      return;
+    }
     if (other.length > local.length && _same(local, other, local.length)) {
       for (final d in remoteDarts.sublist(local.length)) {
         darts.add(d);
@@ -145,6 +165,9 @@ class MatchController extends ChangeNotifier {
       _rebuild();
       resynced++;
     }
+    // Gast hat jetzt genau den Stand des Hosts.
+    if (remote) offlineDirty = false;
+    _persist();
     notifyListeners();
   }
 
@@ -186,6 +209,7 @@ class MatchController extends ChangeNotifier {
     ErrorLog.crumb('Rückgängig (Dart ${darts.length})');
     if (!canUndo) return;
     if (remote) Link.I.sendToHost({'t': 'undo', 'mid': matchId});
+    _markOffline();
     _removeLastDart();
     _rebuild();
     // Gegen Bots: dessen Aufnahme mit zurücknehmen, bis wieder ein Mensch dran ist.
@@ -265,7 +289,11 @@ class MatchController extends ChangeNotifier {
   }
 
   void _persist() {
-    if (remote) return;
+    if (remote) {
+      // Gast: Stand zwischenspeichern – übersteht Verbindungsabbruch und Neustart.
+      Store.guestMatch = engine.finished ? null : {...toJson(), 'dirty': offlineDirty};
+      return;
+    }
     if (engine.finished) {
       Store.activeMatch = null;
       return;
@@ -278,6 +306,7 @@ class MatchController extends ChangeNotifier {
     if (committed || !decided) return;
     committed = true;
     if (!remote) Store.activeMatch = null;
+    if (remote && Store.guestMatch?['mid'] == matchId) Store.guestMatch = null;
     final results = engine.results();
     final botIdx = [for (var i = 0; i < players.length; i++) if (isBot(i)) i];
     final now = DateTime.now().millisecondsSinceEpoch;

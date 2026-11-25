@@ -14,9 +14,10 @@ void main() {
   });
 
   group('Server-Adresse', () {
-    test('Standard ist der Platzhalter, eigene Adresse überschreibt', () {
+    test('Standard ist darts.holypenguin.net, eigene Adresse überschreibt', () {
       expect(ServerConfig.url, defaultServerUrl);
-      expect(ServerConfig.isPlaceholder, isTrue);
+      expect(defaultServerUrl, 'https://darts.holypenguin.net');
+      expect(ServerConfig.isPlaceholder, isFalse);
       Store.serverUrl = 'http://192.168.0.10:8080/';
       expect(ServerConfig.url, 'http://192.168.0.10:8080');
       expect(ServerConfig.isPlaceholder, isFalse);
@@ -95,10 +96,12 @@ void main() {
           isNotNull);
       expect(UpdateCheck.due(now.add(const Duration(hours: 25))), isTrue);
       await relay.stop();
-      // Standard-Adresse ist der Platzhalter → keine Abfrage
+      // Platzhalter-Adresse → keine Abfrage
+      Store.serverUrl = placeholderServerUrl;
       Store.lastUpdateCheck = 0;
       expect(await UpdateCheck.check(installedBuild: 1, web: false), isNull);
       expect(Store.lastUpdateCheck, 0);
+      Store.serverUrl = null;
     });
   });
 }

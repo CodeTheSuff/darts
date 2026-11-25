@@ -76,6 +76,10 @@ const _rounds = [
   OptionChoice(20, '20'),
 ];
 
+/// Checkout-Training/Catch 40: Darts begrenzt (9 bzw. 6) oder werfen, bis gecheckt ist.
+const _untilFinish = OptionDef.choice(
+    'untilFinish', 'Darts', [OptionChoice(false, 'Begrenzt'), OptionChoice(true, 'Bis zum Finish')], false);
+
 final List<ModeDef> modes = [
   ModeDef(
     id: 'x01',
@@ -127,8 +131,12 @@ final List<ModeDef> modes = [
     category: ModeCategory.training,
     short: 'Doubles-Training von D1 bis Bull',
     rules: 'Start mit 27 Punkten. Pro Runde 3 Darts auf D1, D2 … D20 und Bull. Jeder Treffer gibt den '
-        'Wert des Doubles, ohne Treffer wird er abgezogen. Bei 0 oder weniger bist du raus.',
-    options: const [],
+        'Wert des Doubles, ohne Treffer wird er abgezogen. Klassisch bist du bei 0 oder weniger raus; '
+        'mit „Minuspunkte“ spielen alle bis zum Bull weiter.',
+    options: const [
+      OptionDef.choice('negative', 'Regel',
+          [OptionChoice(false, 'Klassisch'), OptionChoice(true, 'Minuspunkte')], false),
+    ],
     create: (p, c, s, seed) => Bobs27Game(p, c, startIndex: s, seed: seed),
     metricLabel: 'Höchste Punktzahl',
   ),
@@ -139,7 +147,8 @@ final List<ModeDef> modes = [
     short: 'Zufällige Finishes mit 9 Darts',
     rules: 'Jede Runde gibt es eine Zufallszahl – für alle Spieler dieselbe. Du hast 9 Darts '
         '(3 Aufnahmen), um mit Double Out auszuchecken. Geworfen wird abwechselnd mit je 3 Darts. '
-        'Wer fertig ist, setzt aus, bis alle durch sind – oder ihr überspringt den Rest der Runde.',
+        'Wer fertig ist, setzt aus, bis alle durch sind – oder ihr überspringt den Rest der Runde. '
+        'Mit „Bis zum Finish“ wirfst du so lange, bis du gecheckt hast; als Treffer zählt es nur innerhalb von 9 Darts.',
     options: const [
       OptionDef.choice(
           'range',
@@ -152,6 +161,7 @@ final List<ModeDef> modes = [
           ],
           '41-170'),
       OptionDef.choice('rounds', 'Runden', _rounds, 10),
+      _untilFinish,
     ],
     create: (p, c, s, seed) =>
         CheckoutChallengeGame(p, c, startIndex: s, seed: seed, kind: 'training'),
@@ -192,8 +202,11 @@ final List<ModeDef> modes = [
     category: ModeCategory.training,
     short: '15 · 16 · D · 17 · 18 · T · 19 · 20 · Bull',
     rules: 'Neun Runden mit festen Zielen. Treffer zählen mit vollem Wert. Wer in einer Runde gar '
-        'nichts trifft, halbiert seinen Punktestand.',
-    options: const [],
+        'nichts trifft, halbiert seinen Punktestand. Gestartet wird mit 0, 40 oder 100 Punkten.',
+    options: const [
+      OptionDef.choice('startPoints', 'Startpunkte',
+          [OptionChoice(0, '0'), OptionChoice(40, '40'), OptionChoice(100, '100')], 40),
+    ],
     create: (p, c, s, seed) => HalveItGame(p, c, startIndex: s, seed: seed),
     metricLabel: 'Höchste Punktzahl',
   ),
@@ -204,12 +217,13 @@ final List<ModeDef> modes = [
     short: '15–20 und Bull schließen, dann punkten',
     rules: 'Jede Zahl 15–20 und Bull dreimal treffen, um sie zu schließen (Double = 2, Triple = 3). '
         'Weitere Treffer auf geschlossene Zahlen bringen Punkte, solange ein Gegner sie noch offen hat. '
-        'Gewonnen hat, wer alles geschlossen hat und mindestens gleich viele Punkte hat.',
+        'Gewonnen hat, wer alles geschlossen hat und mindestens gleich viele Punkte hat. '
+        'Bei „Offen“ gibt es keine Rundengrenze – gespielt wird, bis einer fertig ist.',
     options: const [
       OptionDef.choice(
           'rounds',
           'Max. Runden',
-          [OptionChoice(15, '15'), OptionChoice(20, '20'), OptionChoice(30, '30')],
+          [OptionChoice(15, '15'), OptionChoice(20, '20'), OptionChoice(30, '30'), OptionChoice(0, 'Offen')],
           20),
     ],
     create: (p, c, s, seed) => CricketGame(p, c, startIndex: s, seed: seed),
@@ -221,10 +235,15 @@ final List<ModeDef> modes = [
     short: 'Werde Killer und schalte die anderen aus',
     rules: 'Jeder bekommt eine eigene Zahl. Triff dein eigenes Double, um Killer zu werden. Danach '
         'kostet jeder Treffer auf das Double eines Gegners ihn ein Leben. Achtung: Das eigene Double '
-        'kostet dich als Killer selbst ein Leben. Der Letzte gewinnt.',
+        'kostet dich als Killer selbst ein Leben. Der Letzte gewinnt. '
+        'Statt Double kann auch Single (jeder Treffer auf die Zahl: S = 1, D = 2, T = 3 Leben) '
+        'oder Triple gewählt werden.',
     options: const [
       OptionDef.choice('lives', 'Leben',
           [OptionChoice(3, '3'), OptionChoice(5, '5')], 3),
+      OptionDef.choice('field', 'Zielfeld',
+          [OptionChoice('double', 'Double'), OptionChoice('single', 'Single'), OptionChoice('triple', 'Triple')],
+          'double'),
     ],
     minPlayers: 2,
     create: (p, c, s, seed) => KillerGame(p, c, startIndex: s, seed: seed),
@@ -262,10 +281,12 @@ final List<ModeDef> modes = [
     short: 'Finishes von 61 aufwärts mit 6 Darts',
     rules: 'Ziele 61, 62, 63 … mit je 6 Darts. Check in 2 Darts = 3 Punkte, in 3 Darts = 2 Punkte, '
         'in 4–6 Darts = 1 Punkt. Geworfen wird abwechselnd mit je 3 Darts. Wer fertig ist, setzt aus, '
-        'bis alle durch sind – oder ihr überspringt den Rest der Runde.',
+        'bis alle durch sind – oder ihr überspringt den Rest der Runde. Mit „Bis zum Finish“ wirfst du '
+        'weiter, bis du gecheckt hast (ab dem 7. Dart 0 Punkte).',
     options: const [
       OptionDef.choice('rounds', 'Ziele',
           [OptionChoice(10, '10'), OptionChoice(20, '20'), OptionChoice(40, '40')], 10),
+      _untilFinish,
     ],
     create: (p, c, s, seed) =>
         CheckoutChallengeGame(p, c, startIndex: s, seed: seed, kind: 'catch40'),

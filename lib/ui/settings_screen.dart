@@ -8,8 +8,11 @@ import '../data/storage.dart';
 import '../data/sync.dart';
 import '../platform/platform_env.dart';
 import '../platform/web_hints.dart';
+import '../net/server_config.dart';
 import 'look.dart';
 import 'about_screen.dart';
+import 'server_dialog.dart';
+import 'update_dialog.dart';
 import 'share_screens.dart';
 import 'theme.dart';
 import 'tutorial/tutorial_screen.dart';
@@ -255,6 +258,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (!Plat.I.isWeb)
               _action(Icons.pin_rounded, 'Raum-Code: ${Store.roomCode}',
                   'Fester Code fürs Koppeln im WLAN, damit andere Geräte sich ohne Neueingabe verbinden', _editRoomCode),
+            // Online-Kopplung: Standard-Server ist eingebaut, ein eigener ist nur zum Testen nötig.
+            if (!Plat.I.isWeb)
+              _action(Icons.dns_rounded, 'Server: ${Uri.tryParse(ServerConfig.url)?.host ?? ServerConfig.url}',
+                  'Für Online-Räume und Updates · nur ändern, wenn du einen eigenen Server hast', () async {
+                await showServerDialog(context);
+                if (mounted) setState(() {});
+              }),
             _action(Icons.group_rounded, 'Spieler teilen', 'Statistiken an ein anderes Handy senden', () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShareScreen()));
             }),
@@ -290,6 +300,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _action(Icons.school_rounded, 'Einführung erneut zeigen', 'Kurzer Rundgang über die Startseite', () {
               Store.onboarded = false;
               Navigator.of(context).popUntil((r) => r.isFirst);
+            }),
+            _action(Icons.system_update_rounded, 'Nach Updates suchen', 'Neue Version vom Server laden', () async {
+              final found = await UpdateUi.checkNow(force: true);
+              if (!found && mounted) _snack('Keine neuere Version gefunden.');
             }),
             _action(Icons.new_releases_rounded, 'Was ist neu', 'Neuerungen in Version $appVersion',
                 () => showWhatsNew(context)),

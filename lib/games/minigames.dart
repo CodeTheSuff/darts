@@ -14,8 +14,11 @@ class CricketGame extends GameEngine {
     points = List.filled(n, 0);
   }
 
-  static const numbers = [20, 19, 18, 17, 16, 15, 25];
+  /// Reihenfolge wie auf Anzeige und Tastatur: 15 oben … 20, dann Bull.
+  static const numbers = [15, 16, 17, 18, 19, 20, 25];
+  /// 0 = offen: gespielt wird, bis einer fertig ist.
   final int maxRounds;
+  bool get unlimited => maxRounds <= 0;
   late List<List<int>> marks;
   late List<int> points;
   int? winner;
@@ -50,14 +53,14 @@ class CricketGame extends GameEngine {
 
   @override
   void onNewRound() {
-    if (round > maxRounds) finishGame();
+    if (!unlimited && round > maxRounds) finishGame();
   }
 
   @override
   String get title => 'Cricket';
 
   @override
-  String get subtitle => 'Runde ${min(round, maxRounds)} / $maxRounds';
+  String get subtitle => unlimited ? 'Runde $round · offen' : 'Runde ${min(round, maxRounds)} / $maxRounds';
 
   @override
   String mainValue(int i) => '${points[i]}';
@@ -119,7 +122,8 @@ class CricketGame extends GameEngine {
 
 class KillerGame extends GameEngine {
   KillerGame(super.players, super.config, {super.startIndex, super.seed})
-      : startLives = config.opt<int>('lives') {
+      : startLives = config.opt<int>('lives'),
+        field = config.optOr<String>('field', 'double') {
     final pool = List.generate(20, (i) => i + 1)..shuffle(rng);
     numbers = pool.take(n).toList();
     lives = List.filled(n, startLives);
@@ -129,6 +133,10 @@ class KillerGame extends GameEngine {
   }
 
   final int startLives;
+
+  /// Zielfeld: 'double' (klassisch), 'single' (jeder Treffer auf die Zahl, S = 1, D = 2, T = 3)
+  /// oder 'triple' (nur das Triple zählt).
+  final String field;
   late List<int> numbers;
   late List<int> lives;
   late List<bool> killer;
@@ -140,17 +148,32 @@ class KillerGame extends GameEngine {
 
   int get aliveCount => List.generate(n, (i) => !isOut(i)).where((x) => x).length;
 
+  /// Wie viele Leben ein Treffer zählt (0 = zählt nicht).
+  int weight(Dart d) {
+    if (d.isControl || d.isMiss || d.isBull) return 0;
+    return switch (field) {
+      'single' => d.mult,
+      'triple' => d.isTriple ? 1 : 0,
+      _ => d.isDouble ? 1 : 0,
+    };
+  }
+
+  String get prefix => switch (field) { 'single' => '', 'triple' => 'T', _ => 'D' };
+
+  String get fieldName => switch (field) { 'single' => 'Zahl', 'triple' => 'Triple', _ => 'Double' };
+
   @override
   void onDart(Dart d, ThrowEvent ev) {
     final p = cur;
-    if (!d.isDouble || d.isBull) return;
+    final w = weight(d);
+    if (w == 0) return;
     if (d.field == numbers[p]) {
       if (!killer[p]) {
         killer[p] = true;
         ev.message = '${players[p].name} ist jetzt Killer!';
       } else {
-        lives[p]--;
-        ev.message = 'Autsch! ${players[p].name} trifft das eigene Double';
+        lives[p] = max(0, lives[p] - w);
+        ev.message = 'Autsch! ${players[p].name} trifft die eigene Zahl';
         ev.bust = true;
         if (isOut(p)) {
           outOrder.add(p);
@@ -163,11 +186,12 @@ class KillerGame extends GameEngine {
     if (!killer[p]) return;
     for (var j = 0; j < n; j++) {
       if (j != p && !isOut(j) && numbers[j] == d.field) {
-        lives[j]--;
-        kills[p]++;
+        final lost = min(w, lives[j]);
+        lives[j] -= lost;
+        kills[p] += lost;
         ev.message = isOut(j)
             ? '${players[j].name} ist raus!'
-            : '${players[j].name} verliert ein Leben';
+            : '${players[j].name} verliert ${lost == 1 ? 'ein Leben' : '$lost Leben'}';
         if (isOut(j)) outOrder.add(j);
         _checkEnd(ev);
       }
@@ -186,7 +210,7 @@ class KillerGame extends GameEngine {
   String get title => 'Killer';
 
   @override
-  String get subtitle => 'Runde $round · $startLives Leben';
+  String get subtitle => 'Runde $round · $startLives Leben${field == 'double' ? '' : ' · $fieldName'}';
 
   @override
   String mainValue(int i) => '${numbers[i]}';
@@ -209,31 +233,36 @@ class KillerGame extends GameEngine {
 
   @override
   Hint? get hint {
-    if (!killer[cur]) return Hint('Ziel', 'D${numbers[cur]} – werde Killer', strong: true);
+    if (!killer[cur]) return Hint('Ziel', '$prefix${numbers[cur]} – werde Killer', strong: true);
     final victims = [
       for (var j = 0; j < n; j++)
-        if (j != cur && !isOut(j)) 'D${numbers[j]}'
+        if (j != cur && !isOut(j)) '$prefix${numbers[j]}'
     ];
     return Hint('Angriff', victims.join(' · '), strong: true);
   }
 
-  /// Nur die Doubles der Spielerzahlen zählen → eine Taste pro Spieler.
+  /// Double/Triple: eine Taste pro Spieler. Single: volle Tastatur (S, D und T zählen verschieden).
   @override
   InputSpec get input {
+    final title = killer[cur] ? 'Killer: ${fieldName}s der Gegner treffen' : 'Eigene${field == 'single' ? ' Zahl' : 's $fieldName'} treffen';
+    if (field == 'single') return InputSpec.full(title: title);
+    final mult = field == 'triple' ? 3 : 2;
     final order = [cur, for (var k = 1; k < n; k++) (cur + k) % n];
     return InputSpec.buttons([
       for (final j in order)
         if (!isOut(j))
-          QuickButton(numbers[j], 2, 'D${numbers[j]}', j == cur ? 'Eigene Zahl' : players[j].name, players[j].color),
-    ], title: killer[cur] ? 'Killer: Doubles der Gegner treffen' : 'Eigenes Double treffen');
+          QuickButton(numbers[j], mult, '$prefix${numbers[j]}', j == cur ? 'Eigene Zahl' : players[j].name, players[j].color),
+    ], title: title);
   }
 
   @override
   List<Target> get targets {
-    if (!killer[cur]) return [Target(numbers[cur], 2)];
+    final mult = switch (field) { 'single' => null, 'triple' => 3, _ => 2 };
+    Target t(int f) => mult == null ? Target(f) : Target(f, mult);
+    if (!killer[cur]) return [t(numbers[cur])];
     return [
       for (var j = 0; j < n; j++)
-        if (j != cur && !isOut(j)) Target(numbers[j], 2)
+        if (j != cur && !isOut(j)) t(numbers[j])
     ];
   }
 

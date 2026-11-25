@@ -53,7 +53,7 @@ String relayErrorText(RelayError? code, {bool host = false}) => switch (code) {
     };
 
 /// Meldung, wenn der Server gar nicht erreichbar ist.
-const relayUnreachable = 'Server nicht erreichbar – Internet an? Server-Adresse prüfen (Koppeln → Erweitert).';
+const relayUnreachable = 'Server nicht erreichbar – Internet an? Server-Adresse prüfen (Einstellungen → Daten → Server).';
 
 RelayError? _errorOf(RelayFrame f) {
   final c = f.str('code');

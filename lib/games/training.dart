@@ -170,12 +170,15 @@ class AroundTheClockGame extends GameEngine {
 // ======================================================================
 
 class Bobs27Game extends GameEngine {
-  Bobs27Game(super.players, super.config, {super.startIndex, super.seed}){
+  Bobs27Game(super.players, super.config, {super.startIndex, super.seed})
+      : negative = config.optOr<bool>('negative', false) {
     scores = List.filled(n, 27);
     outRound = List.filled(n, 0);
     doubleHits = List.filled(n, 0);
   }
 
+  /// Minuspunkte: niemand ist raus, alle spielen bis zum Bull.
+  final bool negative;
   late List<int> scores;
   late List<int> outRound; // 0 = noch dabei
   late List<int> doubleHits;
@@ -205,7 +208,7 @@ class Bobs27Game extends GameEngine {
     } else {
       scores[p] -= v;
       ev.message = '${players[p].name}: −$v';
-      if (scores[p] <= 0) {
+      if (scores[p] <= 0 && !negative) {
         outRound[p] = round;
         ev.message = '${players[p].name} ist raus (Runde $round)';
         ev.bust = true;
@@ -283,7 +286,9 @@ class CheckoutChallengeGame extends GameEngine {
   CheckoutChallengeGame(List<GamePlayer> players, GameConfig config,
       {super.startIndex, super.seed, required this.kind})
       : rounds = config.opt<int>('rounds'),
+        untilFinish = kind != '121' && config.optOr<bool>('untilFinish', false),
         super(players, config) {
+    dartsPerTarget = List.generate(n, (_) => <int>[]);
     score = List.filled(n, 0);
     successes = List.filled(n, 0);
     best = List.filled(n, 0);
@@ -313,6 +318,12 @@ class CheckoutChallengeGame extends GameEngine {
 
   final String kind;
   final int rounds;
+
+  /// Checkout-Training/Catch 40: ohne Dart-Grenze werfen, bis gecheckt ist.
+  final bool untilFinish;
+
+  /// Benötigte Darts je gecheckter Zahl (Statistik bei „Bis zum Finish“).
+  late List<List<int>> dartsPerTarget;
   late List<int> score;
   late List<int> successes;
   late List<int> best;
@@ -333,7 +344,11 @@ class CheckoutChallengeGame extends GameEngine {
   /// Checkout-Training/Catch 40: aktuelle Runde (gemeinsame Zahl für alle).
   int stage = 1;
 
-  int get allowed => kind == 'catch40' ? 6 : 9;
+  /// Wertungsgrenze: 9 Darts (Training/121) bzw. 6 (Catch 40).
+  int get limit => kind == 'catch40' ? 6 : 9;
+
+  /// Erlaubte Darts je Zahl (bei „Bis zum Finish“ unbegrenzt).
+  int get allowed => untilFinish ? 1 << 30 : limit;
 
   /// Alle spielen dieselbe Zahl und warten aufeinander (nicht bei 121).
   bool get sharedRounds => kind != '121';
@@ -420,7 +435,11 @@ class CheckoutChallengeGame extends GameEngine {
     final name = players[p].name;
     final t = targetOf(p);
     final darts = usedOf[p];
-    if (success) {
+    if (success && untilFinish) dartsPerTarget[p].add(darts);
+    if (success && untilFinish && darts > limit) {
+      // Gecheckt, aber über der Grenze: zählt nicht als Treffer bzw. gibt 0 Punkte.
+      ev.message = '$name checkt $t in $darts Darts${kind == 'catch40' ? ': +0' : ''}';
+    } else if (success) {
       successes[p]++;
       switch (kind) {
         case 'training':
@@ -438,7 +457,8 @@ class CheckoutChallengeGame extends GameEngine {
       }
       ev.celebration = t >= 100 ? Celebration.highFinish : Celebration.legWon;
       ev.celebrationValue = t;
-    } else {
+    }
+    if (!success) {
       switch (kind) {
         case '121':
           ownTarget[p] = 121;
@@ -476,7 +496,8 @@ class CheckoutChallengeGame extends GameEngine {
   @override
   String get subtitle {
     final r = sharedRounds ? min(stage, rounds) : min(attempts[cur] + 1, rounds);
-    return '${sharedRounds ? 'Runde' : 'Versuch'} $r / $rounds · Ziel $target · Dart ${min(used + 1, allowed)}/$allowed';
+    final dart = untilFinish ? 'Dart ${used + 1}' : 'Dart ${min(used + 1, allowed)}/$allowed';
+    return '${sharedRounds ? 'Runde' : 'Versuch'} $r / $rounds · Ziel $target · $dart';
   }
 
   @override
@@ -500,24 +521,31 @@ class CheckoutChallengeGame extends GameEngine {
       '121' => 'Bestes: ${best[i] == 0 ? '–' : best[i]} · Checks ${successes[i]}',
       _ => 'Checks ${successes[i]}',
     };
-    if (sharedRounds && done[i]) return '$base · fertig';
+    final avg = untilFinish ? avgDarts(i) : null;
+    final base2 = avg == null ? base : '$base · Ø ${fmt1(avg)} D';
+    if (sharedRounds && done[i]) return '$base2 · fertig';
     // Rest nur bei den anderen – beim Spieler am Wurf steht er schon groß.
-    if (usedOf[i] > 0 && i != cur) return '$base · Rest ${rests[i]}';
-    return base;
+    if (usedOf[i] > 0 && i != cur) return '$base2 · Rest ${rests[i]}';
+    return base2;
   }
 
   @override
-  String lastLine(int i) {
-    final t = lastTurns[i];
-    if (t.isEmpty) return '–';
-    return '${t.length} Darts';
+  String lastLine(int i) => dartsLine(lastTurns[i]);
+
+  /// Durchschnitt benötigter Darts je gecheckter Zahl („Bis zum Finish“).
+  double? avgDarts(int i) {
+    final l = dartsPerTarget[i];
+    return l.isEmpty ? null : l.reduce((a, b) => a + b) / l.length;
   }
 
   @override
   Hint? get hint {
-    final left = 3 - (used % 3);
+    final left = min(3 - (used % 3), allowed - used);
     final co = findCheckout(rest, left);
     if (co != null) return Hint('Checkout', co.join(' · '), strong: true);
+    // Kein Finish mehr mit den restlichen Darts: Stellwurf für die nächste Aufnahme.
+    final st = setupShot(rest);
+    if (st != null && allowed - used > left) return Hint('Stellen', st.text);
     return Hint(null, 'Kein Finish mit $left ${left == 1 ? 'Dart' : 'Darts'}');
   }
 
@@ -532,7 +560,10 @@ class CheckoutChallengeGame extends GameEngine {
             'catch40' => '${score[i]} Punkte',
             _ => '${score[i]} / $rounds',
           },
-          detail: 'Checks: ${successes[i]}',
+          detail: untilFinish
+              ? 'Checks: ${successes[i]} · Ø ${avgDarts(i) == null ? '–' : fmt1(avgDarts(i)!)} Darts je Zahl'
+                  '${dartsPerTarget[i].isEmpty ? '' : ' (${dartsPerTarget[i].join(', ')})'}'
+              : 'Checks: ${successes[i]}',
           metric: kind == '121' ? best[i] : score[i],
         )
     ];
@@ -647,7 +678,7 @@ class ScoringGame extends GameEngine {
 
 class HalveItGame extends GameEngine {
   HalveItGame(super.players, super.config, {super.startIndex, super.seed}){
-    scores = List.filled(n, 0);
+    scores = List.filled(n, config.optOr<int>('startPoints', 0));
     halved = List.filled(n, 0);
   }
 

@@ -1,13 +1,14 @@
 import 'package:darts_counter/data/storage.dart';
 import 'package:darts_counter/net/link.dart';
 import 'package:darts_counter/ui/link_screen.dart';
+import 'package:darts_counter/ui/server_dialog.dart';
 import 'package:darts_counter/ui/theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> _setup(WidgetTester tester, Map<String, Object> prefs) async {
-  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '3.1.0', 'sound': false, ...prefs});
+  SharedPreferences.setMockInitialValues({'onboarded': true, 'seenVersion': '3.2.0', 'sound': false, ...prefs});
   await Store.init();
   ThemeHost.apply(palettes.first);
   tester.view.physicalSize = const Size(412, 915) * 3;
@@ -30,7 +31,7 @@ void main() {
     expect(find.text('Im WLAN'), findsOneWidget);
     expect(find.text('Online-Raum eröffnen'), findsOneWidget);
     expect(find.text('RAUM BEITRETEN'), findsOneWidget);
-    expect(find.text('Erweitert'), findsOneWidget);
+    expect(find.text('Erweitert'), findsNothing);
     expect(find.textContaining('Noch kein Server'), findsNothing);
 
     // Ungültiger Code → Hinweis, keine Verbindung
@@ -49,26 +50,33 @@ void main() {
     await _steps(tester, 2);
   });
 
-  testWidgets('Koppeln: ohne Server-Adresse Hinweis im Online-Teil, „Erweitert“ zeigt das Feld', (tester) async {
+  testWidgets('Koppeln: ohne eigene Adresse ist der Standard-Server eingestellt, Online zuerst', (tester) async {
     await _setup(tester, {});
     await tester.pumpWidget(MaterialApp(theme: buildTheme(palettes.first), home: const LinkScreen()));
     await _steps(tester);
-    // Standard: WLAN (Platzhalter-Server)
-    expect(find.text('Raum eröffnen'), findsOneWidget);
-    await tester.tap(find.text('Online'));
-    await _steps(tester);
-    expect(find.textContaining('Noch kein Server'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Erweitert'), 200, scrollable: find.byType(Scrollable).first);
-    await tester.tap(find.text('Erweitert'));
-    await _steps(tester);
-    expect(find.text('Server-Adresse'), findsOneWidget);
-    expect(find.text('Verbindung testen'), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, 'Server-Adresse'), '192.168.0.10:8080');
-    await tester.ensureVisible(find.text('Speichern'));
+    expect(find.text('Online-Raum eröffnen'), findsOneWidget);
+    expect(find.textContaining('Noch kein Server'), findsNothing);
+    expect(find.text('Erweitert'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
     await _steps(tester, 2);
+  });
+
+  testWidgets('Einstellungen → Server: eigene Adresse speichern und auf Standard zurücksetzen', (tester) async {
+    await _setup(tester, {});
+    await tester.pumpWidget(MaterialApp(
+      theme: buildTheme(palettes.first),
+      home: Builder(builder: (c) => TextButton(onPressed: () => showServerDialog(c), child: const Text('öffnen'))),
+    ));
+    await tester.tap(find.text('öffnen'));
+    await _steps(tester);
+    expect(find.textContaining('darts.holypenguin.net'), findsWidgets);
+    await tester.enterText(find.byKey(const ValueKey('server-field')), '192.168.0.10:8080');
     await tester.tap(find.text('Speichern'));
     await _steps(tester, 2);
     expect(Store.serverUrl, 'http://192.168.0.10:8080');
+    await tester.tap(find.text('Standard'));
+    await _steps(tester, 2);
+    expect(Store.serverUrl, isNull);
     await tester.pumpWidget(const SizedBox());
     await _steps(tester, 2);
   });

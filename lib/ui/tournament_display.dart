@@ -3,43 +3,92 @@ import 'dart:math';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../data/storage.dart';
 import '../games/tournament.dart';
 import 'link_coordinator.dart';
 import 'theme.dart';
 import 'tournament_screens.dart' show BracketView, medalColor;
 
-/// Turnier auf der Anzeige (Tablet an der Wand): große Schrift, drei Ansichten, die sich
-/// alle 15 Sekunden abwechseln – Stand (Baum/Tabelle), Als Nächstes, Letzte Ergebnisse.
+/// Turnier auf der Anzeige (Tablet an der Wand): große Schrift, mehrere Ansichten –
+/// Stand (Baum/Tabelle), Als Nächstes, Letzte Ergebnisse und (falls übergeben) die Statistik
+/// des letzten Spiels. Oben antippen oder wischen wechselt die Ansicht. Mit „Automatisch
+/// wechseln“ (gespeichert) geht es alle [interval] von selbst weiter; nach einem Antippen
+/// bleibt die gewählte Ansicht eine Minute stehen.
 class TournamentDisplay extends StatefulWidget {
-  const TournamentDisplay({super.key, required this.t, this.exceptMatch, this.interval = const Duration(seconds: 15)});
+  const TournamentDisplay({
+    super.key,
+    required this.t,
+    this.exceptMatch,
+    this.interval = const Duration(seconds: 15),
+    this.lastMatch,
+    this.lastMatchTitle = 'Letztes Spiel',
+  });
   final Tournament t;
 
   /// Gerade laufendes Match (nicht als „als Nächstes“ zeigen).
   final String? exceptMatch;
   final Duration interval;
 
+  /// Statistik des zuletzt beendeten Spiels (eigene Ansicht), sonst null.
+  final Widget? lastMatch;
+  final String lastMatchTitle;
+
+  /// Pause nach dem Antippen, bevor wieder automatisch gewechselt wird.
+  static const manualPause = Duration(minutes: 1);
+
   @override
   State<TournamentDisplay> createState() => _TournamentDisplayState();
 }
 
-enum _Page { standing, next, results }
+enum _Page { standing, next, results, lastMatch }
 
 class _TournamentDisplayState extends State<TournamentDisplay> {
   Timer? _timer;
-  int _index = 0;
+  _Page _page = _Page.standing;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(widget.interval, (_) {
-      if (mounted) setState(() => _index++);
-    });
+    _arm(widget.interval);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  /// Nächsten automatischen Wechsel planen (nur, wenn eingeschaltet).
+  void _arm(Duration first) {
+    _timer?.cancel();
+    _timer = null;
+    if (!Store.tournamentAutoCycle) return;
+    _timer = Timer(first, () {
+      if (!mounted) return;
+      setState(() => _step(1));
+      _arm(widget.interval);
+    });
+  }
+
+  void _step(int dir) {
+    final pages = _pages;
+    final i = pages.indexOf(_page);
+    _page = pages[((i < 0 ? 0 : i) + dir) % pages.length];
+  }
+
+  void _choose(_Page p) {
+    setState(() => _page = p);
+    _arm(TournamentDisplay.manualPause);
+  }
+
+  void _swipe(int dir) {
+    setState(() => _step(dir));
+    _arm(TournamentDisplay.manualPause);
+  }
+
+  void _toggleAuto() {
+    setState(() => Store.tournamentAutoCycle = !Store.tournamentAutoCycle);
+    _arm(widget.interval);
   }
 
   Tournament get t => widget.t;
@@ -63,12 +112,15 @@ class _TournamentDisplayState extends State<TournamentDisplay> {
     _Page.standing,
     if (_upcoming.isNotEmpty) _Page.next,
     if (_recent.isNotEmpty) _Page.results,
+    if (widget.lastMatch != null) _Page.lastMatch,
   ];
 
   @override
   Widget build(BuildContext context) {
     final pages = _pages;
-    final page = pages[_index % pages.length];
+    // Gewählte Ansicht gibt es nicht mehr (z. B. nichts mehr „als Nächstes“) → Stand.
+    if (!pages.contains(_page)) _page = _Page.standing;
+    final page = _page;
     return LayoutBuilder(
       builder: (context, box) {
         // Skalierung nach Bildschirmhöhe: Handy ≈ 1, Tablet quer ≈ 1,4
@@ -81,15 +133,24 @@ class _TournamentDisplayState extends State<TournamentDisplay> {
               _header(k, pages, page),
               SizedBox(height: 12 * k),
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 500),
-                  child: SizedBox.expand(
-                    key: ValueKey(page),
-                    child: switch (page) {
-                      _Page.standing => _standing(k),
-                      _Page.next => _next(k),
-                      _Page.results => _results(k),
-                    },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: (d) {
+                    final v = d.primaryVelocity ?? 0;
+                    if (v.abs() < 200 || pages.length < 2) return;
+                    _swipe(v < 0 ? 1 : -1);
+                  },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 500),
+                    child: SizedBox.expand(
+                      key: ValueKey(page),
+                      child: switch (page) {
+                        _Page.standing => _standing(k),
+                        _Page.next => _next(k),
+                        _Page.results => _results(k),
+                        _Page.lastMatch => widget.lastMatch ?? const SizedBox.shrink(),
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -113,25 +174,69 @@ class _TournamentDisplayState extends State<TournamentDisplay> {
             : 'Turnierbaum',
       _Page.next => 'Als Nächstes',
       _Page.results => 'Letzte Ergebnisse',
+      _Page.lastMatch => widget.lastMatchTitle,
     };
+    final auto = Store.tournamentAutoCycle;
     final chips = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final p in pages)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            margin: EdgeInsets.only(left: 6 * k),
-            padding: EdgeInsets.symmetric(horizontal: 12 * k, vertical: 6 * k),
-            decoration: BoxDecoration(
-              color: p == page ? C.accent.withValues(alpha: 0.18) : Colors.transparent,
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: p == page ? C.accent : C.line),
-            ),
-            child: Text(
-              title(p),
-              style: TextStyle(fontSize: 13 * k, fontWeight: FontWeight.w800, color: p == page ? C.accent : C.muted),
+          Padding(
+            padding: EdgeInsets.only(left: 6 * k),
+            child: Material(
+              key: ValueKey('tour-tab-${p.name}'),
+              color: Colors.transparent,
+              shape: const StadiumBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => _choose(p),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  constraints: BoxConstraints(minHeight: 40 * k),
+                  alignment: Alignment.center,
+                  padding: EdgeInsets.symmetric(horizontal: 14 * k, vertical: 6 * k),
+                  decoration: BoxDecoration(
+                    color: p == page ? C.accent.withValues(alpha: 0.18) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: p == page ? C.accent : C.line),
+                  ),
+                  child: Text(
+                    title(p),
+                    style: TextStyle(fontSize: 14 * k, fontWeight: FontWeight.w800, color: p == page ? C.accent : C.muted),
+                  ),
+                ),
+              ),
             ),
           ),
+        Padding(
+          padding: EdgeInsets.only(left: 10 * k),
+          child: Tooltip(
+            message: auto ? 'Automatisch wechseln: an' : 'Automatisch wechseln: aus',
+            child: Material(
+              key: const ValueKey('tour-auto'),
+              color: auto ? C.dbl.withValues(alpha: 0.16) : C.surface2,
+              shape: const StadiumBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: _toggleAuto,
+                child: Container(
+                  constraints: BoxConstraints(minHeight: 40 * k),
+                  padding: EdgeInsets.symmetric(horizontal: 12 * k),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(auto ? Icons.autorenew_rounded : Icons.pause_circle_outline_rounded,
+                          size: 18 * k, color: auto ? C.dbl : C.muted),
+                      SizedBox(width: 6 * k),
+                      Text(auto ? 'Auto' : 'Auto aus',
+                          style: TextStyle(fontSize: 14 * k, fontWeight: FontWeight.w800, color: auto ? C.dbl : C.muted)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
     return LayoutBuilder(

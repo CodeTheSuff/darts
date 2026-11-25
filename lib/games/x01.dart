@@ -393,11 +393,7 @@ class X01Game extends GameEngine {
   String? cardStat(int i) => 'Ø ${fmt1(legAverage(i))}';
 
   @override
-  String lastLine(int i) {
-    final t = lastTurns[i];
-    if (t.isEmpty) return '–';
-    return '${sumOf(t)}';
-  }
+  String lastLine(int i) => dartsLine(lastTurns[i]);
 
   @override
   int? get legsToWin => legsTarget;

@@ -68,6 +68,17 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
 
   /// Laufende Spiele nach Scheiben-Nummer (aufsteigend).
   var _boards = <int, _Board>{};
+
+  /// Zuletzt beendetes Spiel (für die Turnier-Ansicht zwischen den Spielen).
+  MatchController? _lastDone;
+
+  /// Statistik des letzten Spiels, wenn es zum gezeigten Turnier gehört.
+  Widget? _lastMatchView(Tournament t) {
+    final c = _lastDone;
+    if (c == null || c.tournamentId != t.id) return null;
+    final r = _report(c);
+    return r != null ? _BoardStats(engine: c.engine, report: r) : _MatchBoard(engine: c.engine);
+  }
   final _queue = <_Show>[];
   _Show? _show;
 
@@ -145,6 +156,8 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     }
     // Verschwundene bzw. ersetzte Spiele aufräumen (samt ihrer ausstehenden Jubel).
     for (final b in old.values) {
+      // Beendetes Spiel bleibt zwischen den Spielen als Ansicht „Letztes Spiel“ abrufbar.
+      if (b.ctl.engine.finished) _lastDone = b.ctl;
       b.sub?.cancel();
       _queue.removeWhere((s) => s.board == b);
       if (_show?.board == b) _show = null;
@@ -291,7 +304,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
         ],
       );
     } else if (t != null) {
-      body = TournamentDisplay(t: t);
+      body = TournamentDisplay(t: t, lastMatch: _lastMatchView(t));
     } else {
       body = _waiting();
     }
@@ -318,6 +331,45 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
           child: Stack(
             children: [
               Positioned.fill(child: body),
+              // Verbindung zum Host weg: deutlich zeigen, dass der Stand gerade nicht aktuell ist.
+              Positioned(
+                top: 8,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: ListenableBuilder(
+                    listenable: Link.I,
+                    builder: (_, _) {
+                      final l = Link.I;
+                      if (!l.isClient || l.isConnected) return const SizedBox.shrink();
+                      final text = l.isOnline && l.relayStatus == RelayStatus.hostOffline
+                          ? 'Host offline – Stand wird nachgeholt, sobald er wieder da ist'
+                          : (l.status.isEmpty ? 'Verbindung verloren – verbinde neu …' : l.status);
+                      return Center(
+                        child: Container(
+                          key: const ValueKey('viewer-offline'),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: C.danger.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 18),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(text,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
               Positioned(
                 right: 8,
                 top: 4,

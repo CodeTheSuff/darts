@@ -16,7 +16,10 @@ import 'update_dialog.dart';
 
 /// Geräte koppeln – online über den Vermittlungs-Server oder direkt im WLAN / Hotspot.
 class LinkScreen extends StatefulWidget {
-  const LinkScreen({super.key});
+  const LinkScreen({super.key, this.sheet = false});
+
+  /// Als Fenster über dem Spiel (Verbindungs-Symbol): mit Schließen-Knopf, Hinweis aufs laufende Spiel.
+  final bool sheet;
 
   @override
   State<LinkScreen> createState() => _LinkScreenState();
@@ -25,10 +28,7 @@ class LinkScreen extends StatefulWidget {
 class _LinkScreenState extends State<LinkScreen> {
   final _name = TextEditingController(text: Store.deviceName);
   final _room = TextEditingController();
-  final _server = TextEditingController(text: Store.serverUrl ?? '');
   bool _busy = false;
-  String? _serverResult;
-  bool _serverOk = false;
 
   /// Gewählter Weg. Im Browser gibt es nur online.
   late LinkMode _mode;
@@ -60,7 +60,6 @@ class _LinkScreenState extends State<LinkScreen> {
     if (l.role != LinkRole.client) l.stopDiscovery();
     _name.dispose();
     _room.dispose();
-    _server.dispose();
     super.dispose();
   }
 
@@ -133,30 +132,6 @@ class _LinkScreenState extends State<LinkScreen> {
       await Clipboard.setData(ClipboardData(text: text));
       _snack('Text kopiert');
     }
-  }
-
-  Future<void> _saveServer() async {
-    final v = _server.text.trim();
-    Store.serverUrl = v.isEmpty ? null : ServerConfig.normalize(v);
-    _server.text = Store.serverUrl ?? '';
-    setState(() {
-      _serverResult = v.isEmpty ? 'Standard-Adresse wird benutzt.' : 'Gespeichert.';
-      _serverOk = true;
-    });
-  }
-
-  Future<void> _testServer() async {
-    final v = _server.text.trim();
-    setState(() {
-      _serverResult = 'Teste …';
-      _serverOk = true;
-    });
-    final err = await ServerConfig.test(v.isEmpty ? null : v);
-    if (!mounted) return;
-    setState(() {
-      _serverOk = err == null;
-      _serverResult = err ?? 'Server erreichbar.';
-    });
   }
 
   void _onLink() {
@@ -462,7 +437,7 @@ class _LinkScreenState extends State<LinkScreen> {
                 Icon(Icons.dns_rounded, color: C.danger),
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Text('Noch kein Server eingestellt – unten unter „Erweitert“ die Server-Adresse eintragen.'),
+                  child: Text('Noch kein Server eingestellt – unter Einstellungen → Daten → Server die Adresse eintragen.'),
                 ),
               ],
             ),
@@ -532,8 +507,6 @@ class _LinkScreenState extends State<LinkScreen> {
           const SectionTitle('Bekannte Räume'),
           for (final h in known) ...[_knownOnlineTile(h), const SizedBox(height: 8)],
         ],
-        const SizedBox(height: 4),
-        _advancedCard(),
       ],
     );
   }
@@ -578,66 +551,21 @@ class _LinkScreenState extends State<LinkScreen> {
         ),
       );
 
-  /// „Erweitert“: Server-Adresse einstellen und testen, nach Updates suchen.
-  Widget _advancedCard() => GlowCard(
-        strength: 0.04,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            leading: Icon(Icons.tune_rounded, color: C.muted),
-            title: const Text('Erweitert', style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text('Server: ${ServerConfig.url}', style: TextStyle(color: C.muted, fontSize: 12)),
-            childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            children: [
-              TextField(
-                controller: _server,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                onSubmitted: (_) => _saveServer(),
-                decoration: InputDecoration(
-                  labelText: 'Server-Adresse',
-                  hintText: kIsWeb ? Uri.base.origin : defaultServerUrl,
-                  helperText: 'Leer lassen für die Standard-Adresse. Zum Testen z. B. http://192.168.0.10:8080',
-                  helperMaxLines: 2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton(onPressed: _saveServer, child: const Text('Speichern')),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(onPressed: _testServer, child: const Text('Verbindung testen')),
-                  ),
-                ],
-              ),
-              if (_serverResult != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(_serverResult!,
-                      style: TextStyle(color: _serverOk ? C.dbl : C.danger, fontWeight: FontWeight.w700)),
-                ),
-              const SizedBox(height: 6),
-              TextButton.icon(
-                onPressed: () async {
-                  final found = await UpdateUi.checkNow(force: true);
-                  if (!found && mounted) _snack('Keine neuere Version gefunden.');
-                },
-                icon: const Icon(Icons.system_update_rounded),
-                label: const Text('Nach Updates suchen'),
-              ),
-            ],
-          ),
-        ),
-      );
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(Link.lanSupported ? 'Handys koppeln' : 'Geräte koppeln')),
+      appBar: AppBar(
+        title: Text(widget.sheet ? 'Geräte verbinden' : (Link.lanSupported ? 'Handys koppeln' : 'Geräte koppeln')),
+        automaticallyImplyLeading: !widget.sheet,
+        actions: [
+          if (widget.sheet)
+            IconButton(
+              tooltip: 'Schließen',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
@@ -930,7 +858,9 @@ class _LinkScreenState extends State<LinkScreen> {
         ),
       const SizedBox(height: 8),
       Text(
-        'Starte jetzt einfach ein Spiel oder öffne ein Turnier – die anderen Handys zeigen es automatisch.',
+        widget.sheet
+            ? 'Das laufende Spiel erscheint auf den verbundenen Geräten automatisch.'
+            : 'Starte jetzt einfach ein Spiel oder öffne ein Turnier – die anderen Handys zeigen es automatisch.',
         textAlign: TextAlign.center,
         style: TextStyle(color: C.muted2, fontSize: 13),
       ),

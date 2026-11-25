@@ -153,9 +153,13 @@ void main() {
     expect(g.status, contains('Host offline'));
     expect(g.isConnected, isFalse);
 
+    final epoch = g.connectionEpoch;
     // Host baut die Verbindung selbst wieder auf und holt denselben Raum zurück.
     final before = s;
     await _wait(() => s > before && g.isConnected);
+    // Neue Verbindung erkannt → die App gleicht offline Eingetragenes ab (Nachsync).
+    expect(g.connectionEpoch, greaterThan(epoch));
+    expect(g.hostCompat, linkCompat);
     expect(host.code, code);
     expect(host.isConnected, isTrue);
     expect(g.isConnected, isTrue);
@@ -192,11 +196,13 @@ void main() {
 
     await relay.dropGuest(host.code!, peer);
     await _wait(() => !g.isConnected);
+    final epoch = g.connectionEpoch;
     final before = s;
     await _wait(() => s > before && g.isConnected);
     expect(g.isConnected, isTrue);
     expect(host.peerCount, 1);
     expect(relay.rooms[host.code]!.guests.keys.single, isNot(peer));
+    expect(g.connectionEpoch, greaterThan(epoch));
     expect(asked, ['g1']);
   });
 

@@ -119,6 +119,9 @@ class GameConfig {
 
   T opt<T>(String key) => options[key] as T;
 
+  /// Wie [opt], aber mit Ersatzwert, falls die Einstellung fehlt (ältere Spielstände/Geräte).
+  T optOr<T>(String key, T fallback) => (options[key] as T?) ?? fallback;
+
   Map<String, dynamic> toJson() => {'mode': modeId, 'options': options};
   factory GameConfig.fromJson(Map<String, dynamic> j) => GameConfig(
       j['mode'] as String, Map<String, dynamic>.from(j['options'] as Map));
@@ -242,13 +245,10 @@ abstract class GameEngine {
 
   /// Große Kennzahl rechts in der Karte am Wurf (z. B. „Ø 45,3“), sonst null.
   String? cardStat(int i) => null;
-  String lastLine(int i) {
-    final t = lastTurns[i];
-    if (t.isEmpty) return '–';
-    return '${sumOf(t)}';
-  }
+  String lastLine(int i) => dartsLine(lastTurns[i]);
 
   int? get legsToWin => null;
+
   int legsOf(int i) => 0;
   int? get setsToWin => null;
   int setsOf(int i) => 0;
@@ -287,3 +287,12 @@ List<PlayerResult> rankBy(List<PlayerResult> list, num Function(PlayerResult) ke
 }
 
 String fmt1(double v) => v.toStringAsFixed(1).replaceAll('.', ',');
+
+
+/// Letzte Aufnahme als Text: die Darts einzeln und die Summe, z. B. „T20 · 20 · 5 = 85“.
+String dartsLine(List<Dart> t, {bool sum = true}) {
+  final real = t.where((d) => !d.isControl).toList();
+  if (real.isEmpty) return '–';
+  final darts = real.map((d) => d.label).join(' · ');
+  return sum ? '$darts = ${sumOf(real)}' : darts;
+}

@@ -9,13 +9,27 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '3.1.0';
+const appVersion = '3.2.0';
 
 /// Android versionCode (muss zu pubspec.yaml passen) – für den Update-Vergleich mit dem Server.
-const appBuild = 20;
+const appBuild = 21;
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '3.2.0': [
+    (Icons.sync_rounded, 'Kein Spielstand geht verloren', 'Verbindung weg? Weiterzählen – die Würfe werden nachgetragen, bei zwei Ständen fragt der Host'),
+    (Icons.wifi_tethering_rounded, 'Verbinden im Spiel', 'Verbindungssymbol oben antippen: Raum eröffnen, Geräte steigen direkt ein'),
+    (Icons.dns_rounded, 'Server voreingestellt', 'darts.holypenguin.net ist eingetragen – ändern unter Einstellungen → Daten'),
+    (Icons.view_carousel_rounded, 'Turnier-Anzeige zum Antippen', 'Ansichten wählen oder wischen, Automatik an/aus, neu: Letztes Spiel'),
+    (Icons.undo_rounded, 'Letzten Wurf zurück', 'Nach dem Spielende vertippt? Zurück ins Spiel, bevor das Ergebnis gespeichert wird'),
+    (Icons.format_list_numbered_rounded, '„Letzte“ mit allen Pfeilen', 'Die letzte Aufnahme steht mit den drei Pfeilen und der Summe da'),
+    (Icons.ads_click_rounded, 'Stellen-Vorschlag überall', 'Auch mit 1 Dart und in Checkout-Training, 121 und Catch 40'),
+    (Icons.grid_on_rounded, 'Cricket neu sortiert', '15 oben bis 20 und Bull, Runden auch „Offen“ bis einer fertig ist'),
+    (Icons.gps_fixed_rounded, 'Killer mit Single oder Triple', 'Bei Single zählt S = 1, D = 2, T = 3 Leben'),
+    (Icons.trending_down_rounded, "Bob's 27 mit Minuspunkten", 'Wahlweise spielen alle bis zum Bull'),
+    (Icons.all_inclusive_rounded, 'Bis zum Finish', 'Catch 40 und Checkout-Training: werfen, bis gecheckt ist'),
+    (Icons.looks_one_rounded, 'Halve It mit Startpunkten', '0, 40 oder 100 Punkte – Standard 40'),
+  ],
   '3.1.0': [
     (Icons.link_rounded, 'Mit einem Tipp verbinden', 'Seite /app des Servers: App laden und „App mit diesem Server verbinden“'),
     (Icons.verified_rounded, 'Versionen passen zusammen', 'Ist eine App im Raum zu alt, sagt Darts, wo aktualisiert werden muss'),

@@ -6,11 +6,15 @@ import 'web_bridge.dart';
 
 /// Produktiv-Adresse des Vermittlungs-Servers.
 ///
-/// Wird beim Bauen gesetzt: `--dart-define=DARTS_SERVER_URL=https://darts.example.de`
-/// (macht `tool/build_release.ps1 -Domain …` automatisch). Ohne Angabe steht hier ein
-/// Platzhalter – dann geht online nur mit selbst eingetragener Adresse (Einstellungen → Erweitert).
+/// Standard ist der Server darts.holypenguin.net – auch ein normales `flutter build apk` hat ihn.
+/// Beim Bauen überschreibbar: `--dart-define=DARTS_SERVER_URL=https://darts.example.de`
+/// (macht `tool/build_release.ps1 -Domain …` automatisch). Ein anderer Server lässt sich in der
+/// App unter Einstellungen → Daten → „Server“ eintragen.
 /// Im Browser spielt das keine Rolle: Die Web-App nimmt immer den Server, von dem sie geladen wurde.
-const defaultServerUrl = String.fromEnvironment('DARTS_SERVER_URL', defaultValue: placeholderServerUrl);
+const defaultServerUrl = String.fromEnvironment('DARTS_SERVER_URL', defaultValue: builtInServerUrl);
+
+/// Fest eingebauter Standard-Server.
+const builtInServerUrl = 'https://darts.holypenguin.net';
 
 /// Platzhalter, solange keine echte Adresse eingebaut ist.
 const placeholderServerUrl = 'https://darts.example.invalid';

@@ -609,6 +609,10 @@ class Store {
   static void markTutorialSeen(String id) =>
       _p.setStringList('tutorialSeen', {...tutorialSeen, id}.toList());
 
+  /// Anzeige: Turnier-Ansichten (Stand, Als Nächstes, …) automatisch wechseln.
+  static bool get tournamentAutoCycle => _p.getBool('tourAutoCycle') ?? true;
+  static set tournamentAutoCycle(bool v) => _p.setBool('tourAutoCycle', v);
+
   /// Anzeige: welche Scheibe gezeigt wird (0 = alle laufenden Spiele).
   static int get viewerBoard => _p.getInt('viewerBoard') ?? 0;
   static set viewerBoard(int v) => _p.setInt('viewerBoard', v);
@@ -635,6 +639,22 @@ class Store {
 
   static set activeMatch(Map<String, dynamic>? v) =>
       v == null ? _p.remove('activeMatch') : _p.setString('activeMatch', jsonEncode(v));
+
+  /// Gast: laufendes gekoppeltes Spiel (Stand wie zuletzt hier bekannt, samt offline
+  /// eingetragener Würfe; `dirty` = es gibt Würfe, die der Host noch nicht hat).
+  /// Übersteht einen Neustart – beim Wiederverbinden wird mit dem Host abgeglichen.
+  static Map<String, dynamic>? get guestMatch {
+    final raw = _p.getString('guestMatch');
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static set guestMatch(Map<String, dynamic>? v) =>
+      v == null ? _p.remove('guestMatch') : _p.setString('guestMatch', jsonEncode(v));
 
   // ---------------- Turniere ----------------
   static List<Map<String, dynamic>> get tournaments {

@@ -21,7 +21,10 @@ enum LinkRole { none, host, client }
 /// Stand des Spiel-/Kopplungsformats zwischen den Geräten. Erhöhen, wenn sich Nachrichten oder der
 /// Spielstand so ändern, dass ältere Apps sie nicht mehr richtig verstehen – und dann ggf.
 /// [linkMinCompat] mitziehen. Apps ohne Angabe (bis 3.0.0) zählen als 2.
-const linkCompat = 3;
+const linkCompat = 4;
+
+/// Ab diesem Stand kennt der Host „catchup“ (Nachsync offline eingetragener Würfe).
+const linkCatchupCompat = 4;
 
 /// Ältester Stand, mit dem diese App noch zusammen spielt. Ältere Geräte bekommen „Bitte aktualisieren“.
 const linkMinCompat = 2;
@@ -181,6 +184,13 @@ class Link extends ChangeNotifier {
   bool _wantConnected = false;
   Timer? _retry;
 
+  /// Gast: zählt jede neue Verbindung zum Host (nach Abbruch, Neustart). Damit erkennt die App
+  /// den ersten Stand nach dem Wiederverbinden und gleicht offline eingetragene Würfe ab.
+  int connectionEpoch = 0;
+
+  /// Gast: Format-Stand des Hosts (aus „welcome“/„auth“; Apps bis 3.0.0 → 2).
+  int hostCompat = 2;
+
   // ---------------------------------------------------------------- Sitzung merken
 
   /// Wie lange nach dem letzten Lebenszeichen eine Kopplung wiederhergestellt wird.
@@ -325,7 +335,18 @@ class Link extends ChangeNotifier {
     status = 'Raum offen';
     addresses = await localAddresses();
     await _acquireMulticast();
-    _announce = Timer.periodic(const Duration(seconds: 1), (_) => _sendAnnouncement());
+    var ticks = 0;
+    _announce = Timer.periodic(const Duration(seconds: 1), (_) async {
+      // Alle 10 s die eigenen Adressen auffrischen (neue IP nach WLAN-Ausfall oder -Wechsel).
+      if (++ticks % 10 == 0) {
+        final now = await localAddresses();
+        if (_server != null && now.join(',') != addresses.join(',')) {
+          addresses = now;
+          notifyListeners();
+        }
+      }
+      _sendAnnouncement();
+    });
     _sendAnnouncement();
     _remember({'role': 'host'});
     notifyListeners();
@@ -515,7 +536,7 @@ class Link extends ChangeNotifier {
       case 'mode':
         peer.viewer = msg['viewer'] == true;
         notifyListeners();
-      case 'dart' || 'undo' || 'start' || 'board' || 'boardNo':
+      case 'dart' || 'undo' || 'start' || 'board' || 'boardNo' || 'catchup':
         // Anzeige-Geräte dürfen nichts eintragen. Absender mitgeben (Scheiben-Zuordnung).
         if (!peer.viewer) onHostMessage?.call({...msg, '_dev': peer.device, '_name': peer.name});
       case 'share':
@@ -736,6 +757,7 @@ class Link extends ChangeNotifier {
   /// Neue Verbindung zum Host: anmelden (mit Schlüssel oder Code) und lauschen.
   void _attach(PeerSocket ws) {
     _ws = ws;
+    connectionEpoch++;
     status = 'Verbunden';
     _nonce = randomHex(16);
     _send(ws, {
@@ -779,14 +801,50 @@ class Link extends ChangeNotifier {
     status = 'Verbindung verloren – verbinde neu …';
     notifyListeners();
     _retry?.cancel();
+    // Bekommt der Host nach dem WLAN-Ausfall eine neue Adresse, findet ihn die Suche wieder.
+    final hd = _remembered ?? _expectHost;
+    if (searchOnRetry && hd != null && _udpListen == null && lanAvailable && !_retrySearch) {
+      _retrySearch = true;
+      unawaited(startDiscovery());
+    }
+    var busy = false;
     _retry = Timer.periodic(const Duration(seconds: 2), (t) async {
       if (!_wantConnected) {
         t.cancel();
+        _endRetrySearch();
         return;
       }
-      if (_ws != null) return;
-      if (await _connect()) t.cancel();
+      if (_ws != null || busy) return;
+      busy = true;
+      try {
+        final found = hd == null ? null : rooms.value.where((r) => r.device == hd).firstOrNull;
+        if (found != null && (found.address != hostAddress || found.port != hostPort)) {
+          ErrorLog.crumb('Kopplung: Host unter neuer Adresse gefunden');
+          hostAddress = found.address;
+          hostPort = found.port;
+        }
+        if (await _connect()) {
+          t.cancel();
+          _endRetrySearch();
+          _clientSession();
+        }
+      } finally {
+        busy = false;
+      }
     });
+  }
+
+  /// Gast (WLAN): Suche läuft nur wegen der Wiederverbindung.
+  bool _retrySearch = false;
+
+  /// Tests: beim Wiederverbinden nicht das Netz durchsuchen.
+  @visibleForTesting
+  static bool searchOnRetry = true;
+
+  void _endRetrySearch() {
+    if (!_retrySearch) return;
+    _retrySearch = false;
+    stopDiscovery();
   }
 
   /// Gast: zuletzt empfangenes Turnier (für „unverändert“-Stände).
@@ -814,6 +872,7 @@ class Link extends ChangeNotifier {
     // Raum-Gerät zu alt für diese App? (Hosts bis 3.0.0 schicken keine Angabe → 2)
     if (msg['t'] == 'auth' || msg['t'] == 'welcome') {
       final hc = msg['compat'];
+      hostCompat = hc is num ? hc.toInt() : 2;
       if ((hc is num ? hc.toInt() : 2) < minCompat) {
         _versionStop(VersionMismatch.hostTooOld);
         return;
@@ -1169,6 +1228,7 @@ class Link extends ChangeNotifier {
   /// sonst gilt das Beenden dort nur als „Host offline“ und die Gäste warten.
   Future<void> stop({bool closeRoom = false}) async {
     _wantConnected = false;
+    _endRetrySearch();
     // Gemerkte Kopplung bleibt bestehen (Absturz/Beenden) – nur [leave] löscht sie.
     _session = null;
     _sessionBeat?.cancel();
