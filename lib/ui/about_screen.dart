@@ -9,13 +9,16 @@ import '../data/storage.dart';
 import 'logo.dart';
 import 'theme.dart';
 
-const appVersion = '3.2.0';
+const appVersion = '3.2.1';
 
 /// Android versionCode (muss zu pubspec.yaml passen) – für den Update-Vergleich mit dem Server.
-const appBuild = 21;
+const appBuild = 22;
 
 /// Neuerungen je Version (neueste zuerst).
 const changelog = <String, List<(IconData, String, String)>>{
+  '3.2.1': [
+    (Icons.swipe_rounded, 'iPhone: Wischen beendet kein Spiel', 'Das Spiel verlässt du nur noch über den Pfeil oben links'),
+  ],
   '3.2.0': [
     (Icons.sync_rounded, 'Kein Spielstand geht verloren', 'Verbindung weg? Weiterzählen – die Würfe werden nachgetragen, bei zwei Ständen fragt der Host'),
     (Icons.wifi_tethering_rounded, 'Verbinden im Spiel', 'Verbindungssymbol oben antippen: Raum eröffnen, Geräte steigen direkt ein'),
