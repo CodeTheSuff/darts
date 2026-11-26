@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -603,64 +604,67 @@ class _GameScreenState extends State<GameScreen> {
     final shown = _pause?.player ?? e.cur;
     final darts = _pause?.darts ?? e.visibleTurn;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
-              child: Column(
-                children: [
-                  _header(),
-                  if (_soVisible) _singleOutBar(),
-                  if (_skipVisible) _skipBar(),
-                  const SizedBox(height: 8),
-                  _activeCard(shown, darts),
-                  const SizedBox(height: 8),
-                  if (e is CricketGame)
-                    _CricketTable(game: e as CricketGame, current: shown)
-                  else if (e.n > 1)
-                    _others(shown),
-                  const SizedBox(height: 8),
-                  _turnRow(darts),
-                  const SizedBox(height: 8),
-                  _hintBar(),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 250),
-                      opacity: ctl.botTurn ? 0.45 : 1,
-                      child: Keypad(
-                        key: ValueKey(e.input.kind),
-                        spec: e.input,
-                        color: _color(e.cur),
-                        onDart: _onDart,
-                        onUndo: _undo,
-                        canUndo: ctl.canUndo && !_busy,
-                        enabled: !_busy && !e.finished && !ctl.botTurn,
+    return PopScope(
+      canPop: defaultTargetPlatform != TargetPlatform.iOS,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+                child: Column(
+                  children: [
+                    _header(),
+                    if (_soVisible) _singleOutBar(),
+                    if (_skipVisible) _skipBar(),
+                    const SizedBox(height: 8),
+                    _activeCard(shown, darts),
+                    const SizedBox(height: 8),
+                    if (e is CricketGame)
+                      _CricketTable(game: e as CricketGame, current: shown)
+                    else if (e.n > 1)
+                      _others(shown),
+                    const SizedBox(height: 8),
+                    _turnRow(darts),
+                    const SizedBox(height: 8),
+                    _hintBar(),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 250),
+                        opacity: ctl.botTurn ? 0.45 : 1,
+                        child: Keypad(
+                          key: ValueKey(e.input.kind),
+                          spec: e.input,
+                          color: _color(e.cur),
+                          onDart: _onDart,
+                          onUndo: _undo,
+                          canUndo: ctl.canUndo && !_busy,
+                          enabled: !_busy && !e.finished && !ctl.botTurn,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          if (_showResult) _matchStatsOpen ? _matchStatsPanel() : _resultPanel(),
-          if (_legStats != null) _legStatsPanel(_legStats!),
-          if (_celebration != null)
-            Positioned.fill(
-              child: CelebrationOverlay(
-                key: ValueKey(_celebration),
-                kind: _celebration!.kind,
-                name: e.players[_celebration!.player].name,
-                color: _color(_celebration!.player),
-                darts: _celebration!.darts,
-                value: _celebration!.value,
-                label: _celebration!.label,
-                onDone: _celebrationFinished,
+            if (_showResult) _matchStatsOpen ? _matchStatsPanel() : _resultPanel(),
+            if (_legStats != null) _legStatsPanel(_legStats!),
+            if (_celebration != null)
+              Positioned.fill(
+                child: CelebrationOverlay(
+                  key: ValueKey(_celebration),
+                  kind: _celebration!.kind,
+                  name: e.players[_celebration!.player].name,
+                  color: _color(_celebration!.player),
+                  darts: _celebration!.darts,
+                  value: _celebration!.value,
+                  label: _celebration!.label,
+                  onDone: _celebrationFinished,
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -670,7 +674,7 @@ class _GameScreenState extends State<GameScreen> {
       height: 44,
       child: Row(
         children: [
-          _iconBtn(Icons.arrow_back_rounded, 'Zurück', () => Navigator.of(context).maybePop()),
+          _iconBtn(Icons.arrow_back_rounded, 'Zurück', () => Navigator.of(context).pop()),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
